@@ -1,0 +1,768 @@
+:root {
+  --color-background: #111;
+  --color-text: #ffffff;
+  --color-primary: #FF8A3D;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+}
+
+.tomorrow-boot-banner {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 100001;
+  padding: 12px 16px;
+  background: #b00020;
+  color: #fff;
+  font: 14px/1.4 Consolas, "Courier New", monospace;
+  white-space: pre-wrap;
+  pointer-events: none;
+}
+
+.tomorrow-boot-banner.is-visible {
+  display: block;
+}
+
+.static-boot-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #1a2744;
+  color: #fff;
+  font-family: system-ui, Arial, sans-serif;
+  text-align: center;
+  pointer-events: none;
+}
+
+.static-boot-title {
+  font-size: 48px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-bottom: 16px;
+}
+
+.static-boot-status {
+  font-size: 22px;
+  opacity: 0.85;
+  max-width: min(92vw, 1100px);
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
+html {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  font-family: var(--font-sans);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+.card {
+  text-align: center;
+}
+
+#activationHeadline.pairing-code-display {
+  font-size: 72px;
+  letter-spacing: 12px;
+  margin: 24px 0;
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+#activationHeadline.pairing-code-rolling {
+  font-size: 72px;
+  letter-spacing: 12px;
+  margin: 24px 0;
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
+  display: inline-block;
+  min-width: 6ch;
+}
+
+.cms-setup {
+  max-width: min(96vw, 960px);
+  padding: 0 20px;
+}
+
+.cms-setup-hint {
+  font-size: 22px;
+  opacity: 0.85;
+  margin: 12px 0 20px;
+  line-height: 1.35;
+}
+
+.cms-setup .mono {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 20px;
+  word-break: break-all;
+}
+
+.cms-endpoint-input {
+  width: min(96vw, 920px);
+  min-height: 72px;
+  font-size: 38px;
+  padding: 20px 22px;
+  border-radius: 12px;
+  border: 3px solid var(--color-primary);
+  background: #1a1a1a;
+  color: var(--color-text);
+  box-sizing: border-box;
+  box-shadow: 0 0 0 2px rgba(255, 138, 61, 0.35);
+}
+
+.cms-endpoint-input:focus {
+  outline: 5px solid #fff;
+  outline-offset: 4px;
+  box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.22);
+}
+
+.cms-setup-actions button:focus {
+  outline: 5px solid #fff;
+  outline-offset: 4px;
+  box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.22);
+}
+
+.cms-setup-remote-hint {
+  margin-top: 8px;
+  font-size: 20px;
+}
+
+.cms-setup-actions {
+  margin-top: 28px;
+}
+
+.cms-setup-actions button {
+  font-size: 32px;
+  padding: 20px 48px;
+  border-radius: 12px;
+  border: none;
+  background: var(--color-primary);
+  color: #111;
+  cursor: pointer;
+  min-width: min(80vw, 420px);
+}
+
+.cms-setup-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cms-setup-error {
+  min-height: 1.2em;
+  margin: 16px 0 8px;
+  font-size: 24px;
+  color: #ff8a8a;
+}
+
+/* ============================================================
+   CUSTOM ON-SCREEN KEYBOARD (rotates with body, pop-up style)
+   Fixed to the bottom of body so it slides up over the form.
+   Because body itself has a CSS transform in portrait modes,
+   "position: fixed" is relative to body — not the physical
+   viewport — so the keyboard rotates with the rest of the UI.
+   ============================================================ */
+.cms-keyboard {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  width: min(96%, 920px);
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px;
+  background: rgba(20, 20, 20, 0.97);
+  border: 1px solid #2a2a2a;
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  z-index: 200;
+  transform: translateX(-50%) translateY(calc(100% + 48px));
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.25s ease, opacity 0.2s ease;
+}
+.cms-keyboard--visible {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+.cms-kb-row {
+  display: flex;
+  gap: 6px;
+  justify-content: stretch;
+  width: 100%;
+}
+.cms-key {
+  flex: 1 1 0;
+  min-width: 0;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 26px;
+  padding: 14px 0;
+  background: #1a1a1a;
+  border: 2px solid #2a2a2a;
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.cms-key.wide-2 { flex-grow: 2; }
+.cms-key.wide-3 { flex-grow: 3; }
+.cms-key.cms-key-action {
+  background: #2a2018;
+  border-color: #4a3a25;
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cms-key:focus {
+  outline: 4px solid #fff;
+  outline-offset: 2px;
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #111;
+}
+
+/* ============================================================
+   ORIENTATION ROTATION
+   Applied as a class on <html>. Body is rotated; intro screen
+   stays in physical landscape (orientation chooser).
+   ============================================================ */
+html.orient-portrait-right,
+html.orient-portrait-left {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+html.orient-portrait-right body {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vh;
+  height: 100vw;
+  transform-origin: top left;
+  transform: translate(100vw, 0) rotate(90deg);
+}
+
+html.orient-portrait-left body {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vh;
+  height: 100vw;
+  transform-origin: top left;
+  transform: translate(0, 100vh) rotate(-90deg);
+}
+
+/* Screen-filling elements: fall back to body's rotated dimensions
+   (so they don't keep using the physical viewport's vw/vh). */
+html.orient-portrait-right .contentPanel,
+html.orient-portrait-left .contentPanel,
+html.orient-portrait-right .contentArea,
+html.orient-portrait-left .contentArea,
+html.orient-portrait-right .idle-state-shell,
+html.orient-portrait-left .idle-state-shell {
+  width: 100%;
+  height: 100%;
+  inset: 0;
+}
+
+/* Intro screen always shows in physical landscape so the user
+   can pick orientation. The current flow hides intro before
+   applyOrientation() runs, so no counter-rotation needed. */
+
+/* ============================================================
+   INTRO SCREEN (first-launch orientation picker)
+   ============================================================ */
+.intro-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #050505;
+  color: #fff;
+  font-family: 'Inter Tight', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6vh 8vw;
+  overflow: hidden;
+}
+
+.intro-screen .ambient,
+.ambient {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1001;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(255,255,255,0.03), transparent 60%),
+    radial-gradient(ellipse at 50% 100%, rgba(255,255,255,0.02), transparent 70%);
+}
+
+.intro-screen .hero-wrap {
+  text-align: center;
+  margin-bottom: 6vh;
+}
+
+.intro-screen .hero-type {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-weight: 300;
+  font-size: clamp(48px, 9vw, 140px);
+  letter-spacing: 0.04em;
+  line-height: 1;
+  display: inline-flex;
+  align-items: baseline;
+  color: #fff;
+}
+
+.intro-screen .hero-type .letters {
+  white-space: pre;
+}
+
+.intro-screen .hero-type .cursor {
+  display: inline-block;
+  width: 0.1em;
+  height: 0.85em;
+  background: #fff;
+  margin-left: 0.1em;
+  animation: introBlink 1s steps(2) infinite;
+  vertical-align: baseline;
+}
+
+.intro-screen .hero-type.done .cursor {
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+@keyframes introBlink { 50% { opacity: 0; } }
+
+.intro-screen .tagline {
+  font-weight: 300;
+  font-size: clamp(20px, 2.4vw, 36px);
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  color: #b0b0b0;
+  margin-top: 4vh;
+  text-align: center;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 1.2s cubic-bezier(0.22, 1, 0.36, 1) 0.3s,
+              transform 1.2s cubic-bezier(0.22, 1, 0.36, 1) 0.3s;
+}
+
+.intro-screen .tagline.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.intro-screen .tagline .em {
+  color: #fff;
+  font-weight: 400;
+}
+
+.intro-screen .orient-section {
+  margin-top: 8vh;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 1s cubic-bezier(0.22, 1, 0.36, 1) 0.6s,
+              transform 1s cubic-bezier(0.22, 1, 0.36, 1) 0.6s;
+}
+
+.intro-screen .orient-section.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.intro-screen .orient-label {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: #d4d4d4;
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.intro-screen .orient-row {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.intro-screen .orient-card {
+  background: #0a0a0a;
+  border: 1px solid #1a1a1a;
+  border-radius: 8px;
+  padding: 20px 28px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.intro-screen .orient-card:hover,
+.intro-screen .orient-card:focus {
+  border-color: #b0b0b0;
+  outline: none;
+}
+
+.intro-screen .orient-card:focus {
+  border-color: #fff;
+  box-shadow: 0 0 0 4px rgba(255,255,255,0.15);
+}
+
+.intro-screen .orient-card.selected {
+  border-color: #fff;
+  background: #111;
+}
+
+.intro-screen .orient-icon {
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  color: #b0b0b0;
+  transition: color 0.25s ease;
+}
+
+.intro-screen .orient-card:hover .orient-icon,
+.intro-screen .orient-card:focus .orient-icon,
+.intro-screen .orient-card.selected .orient-icon {
+  color: #fff;
+}
+
+.intro-screen .orient-icon.landscape { width: 36px; height: 22px; }
+.intro-screen .orient-icon.portrait { width: 22px; height: 36px; }
+
+.intro-screen .orient-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+}
+
+.intro-screen .orient-deg {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: #b0b0b0;
+  letter-spacing: 0.08em;
+}
+
+.intro-screen .next-section {
+  margin-top: 7vh;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.9s,
+              transform 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.9s;
+}
+
+.intro-screen .next-section.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.intro-screen .next-btn {
+  background: #fff;
+  color: #050505;
+  border: none;
+  padding: 16px 36px;
+  border-radius: 100px;
+  font-family: 'Inter Tight', system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.intro-screen .next-btn.enabled {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.intro-screen .next-btn.enabled:hover { transform: translateY(-1px); }
+
+.intro-screen .next-btn:focus {
+  outline: 4px solid #fff;
+  outline-offset: 4px;
+}
+
+.intro-screen .next-btn svg { width: 14px; height: 14px; }
+
+/* ============================================================
+   INTRO — PORTRAIT VARIANT
+   Used during orientation re-selection (Red A button) when the
+   user is currently in a portrait orientation. Cards stack
+   vertically and are wider, optimized for a tall viewport.
+   ============================================================ */
+.intro-screen.intro-portrait .hero-type {
+  font-size: clamp(36px, 11vw, 120px);
+}
+.intro-screen.intro-portrait .tagline {
+  font-size: clamp(20px, 4vw, 44px);
+  max-width: 90%;
+}
+.intro-screen.intro-portrait .orient-section {
+  margin-top: 8vh;
+  max-width: 480px;
+  width: 100%;
+}
+.intro-screen.intro-portrait .orient-label {
+  font-size: 13px;
+  letter-spacing: 0.25em;
+  margin-bottom: 28px;
+}
+.intro-screen.intro-portrait .orient-row {
+  flex-direction: column;
+  gap: 12px;
+}
+.intro-screen.intro-portrait .orient-card {
+  flex-direction: row;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 24px;
+  min-width: 0;
+  width: 100%;
+}
+.intro-screen.intro-portrait .orient-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  text-align: left;
+}
+.intro-screen.intro-portrait .orient-name {
+  font-size: 16px;
+}
+.intro-screen.intro-portrait .orient-deg {
+  font-size: 12px;
+}
+.intro-screen.intro-portrait .next-section {
+  margin-top: 6vh;
+}
+.intro-screen.intro-portrait .next-btn {
+  padding: 18px 44px;
+  font-size: 17px;
+}
+.intro-screen.intro-portrait .next-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+
+
+.contentPanel{
+    display: none;
+    position: fixed;
+    inset: 0;
+    /* background: black; */
+    width: 100%;
+    height: 100%;
+}
+
+.DownloadStatus{
+    background: white;
+    font-size: 40px;
+    color: red;
+    width: 50vw;
+    height: 10vh;
+    position:fixed;
+    top:0;
+    left:0;
+    z-index: 999;
+    display: none;
+}
+
+.contentArea{
+    /* display: none; */
+    /* position: fixed;
+    inset: 0; */
+    position: relative;
+    background: black;
+    width: 100%;
+    height: 100%;
+    z-index: 998;
+    overflow: hidden;
+    contain: layout paint size;
+}
+
+.content-layer{
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    z-index: 1;
+    transition: opacity 300ms ease-in-out;
+    background: #000;
+    pointer-events: none;
+    contain: layout paint size;
+    overflow: hidden;
+}
+
+.content-layer--visible{
+    opacity: 1;
+    z-index: 2;
+}
+
+.content-layer.content-layer--instant-swap{
+    transition: none !important;
+}
+
+.content-layer img,
+.content-layer video{
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: cover;
+    display: block;
+    background: #000;
+}
+
+/* Setup / config contentFit — applied via html.content-fit-* */
+html.content-fit-contain .content-layer img,
+html.content-fit-contain .content-layer video{
+    object-fit: contain;
+}
+html.content-fit-cover .content-layer img,
+html.content-fit-cover .content-layer video{
+    object-fit: cover;
+}
+html.content-fit-stretch .content-layer img,
+html.content-fit-stretch .content-layer video{
+    object-fit: fill;
+}
+
+.content-layer video.content-video--loading{
+    opacity: 0;
+    visibility: hidden;
+}
+
+/* Idle / fallback visual layer (iframe only — does not share contentArea with playback) */
+.idle-state-shell {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 900;
+  background: #050505;
+}
+
+.idle-state-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: transparent;
+}
+
+/* Hidden device info menu (remote: 0000, exit: Return) */
+.hidden-device-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.88);
+}
+
+.hidden-device-menu-panel {
+  width: min(96vw, 920px);
+  max-height: 90vh;
+  overflow: auto;
+  padding: 36px 40px 32px;
+  border-radius: 16px;
+  border: 3px solid var(--color-primary);
+  background: #141414;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  text-align: left;
+}
+
+.hidden-device-menu-title {
+  margin: 0 0 24px;
+  font-size: 40px;
+  font-weight: 600;
+  color: var(--color-primary);
+  text-align: center;
+}
+
+.hidden-device-menu-list {
+  margin: 0;
+  padding: 0;
+  min-height: 120px;
+}
+
+.hidden-device-menu-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 28px;
+  margin-bottom: 14px;
+}
+
+.hidden-device-menu-row:last-child {
+  margin-bottom: 0;
+}
+
+.hidden-device-menu-label {
+  flex: 0 0 240px;
+  max-width: 34%;
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  color: #ffffff;
+  opacity: 0.85;
+}
+
+.hidden-device-menu-value {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+  font-size: 22px;
+  line-height: 1.4;
+  color: #f5f5f5;
+  word-break: break-all;
+}
+
+.hidden-device-menu-hint {
+  margin: 28px 0 0;
+  font-size: 22px;
+  text-align: center;
+  opacity: 0.9;
+  line-height: 1.4;
+}

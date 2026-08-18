@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="TomorrowOS.Player/TomorrowOS.Player.csproj" />
+  <Project Path="TomorrowOS.Setup/TomorrowOS.Setup.csproj" />
+  <Project Path="TomorrowOS.Watchdog/TomorrowOS.Watchdog.csproj" />
+</Solution>

@@ -1,0 +1,1001 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install TomorrowOS Windows Player</title>
+<style>
+:root {
+  --white: #ffffff;
+  --near: #fafafa;
+  --sunk: #f4f4f4;
+  --line: #e6e6e6;
+  --line-2: #d6d6d6;
+  --ink: #141311;
+  --ink-2: #5d554d;
+  --ink-3: #8a837b;
+  --paper: #f8f3ea;
+  --ok: #2f6b4f;
+  --ok-bg: #eef5f1;
+  --warn: #8a5a00;
+  --warn-bg: #fdf4e3;
+  --fail: #a3301c;
+  --fail-bg: #fbeeeb;
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --mono: "Cascadia Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--white);
+  overflow: hidden;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid #2f6df6; outline-offset: 2px; border-radius: 3px; }
+.vh { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.shell { height: 100%; display: flex; flex-direction: column; }
+.win__bar {
+  flex: 0 0 auto; height: 42px; display: flex; align-items: center;
+  padding-left: 16px; border-bottom: 1px solid var(--line); background: var(--white);
+  user-select: none; cursor: default;
+}
+.win__title { font-size: 13px; font-weight: 600; }
+.win__mark {
+  width: 18px; height: 18px; border-radius: 4px; background: var(--ink);
+  color: var(--paper); font-family: var(--mono); font-size: 10px; font-weight: 700;
+  display: grid; place-items: center; margin-right: 9px;
+}
+.win__ctl { margin-left: auto; display: flex; height: 100%; }
+.win__ctl button {
+  width: 46px; border: 0; background: transparent; cursor: pointer;
+  color: var(--ink-2); font-size: 12px;
+}
+.win__ctl button:hover { background: var(--sunk); }
+.win__ctl button.close:hover { background: #c42b1c; color: #fff; }
+.win__body { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.win__foot {
+  flex: 0 0 auto; border-top: 1px solid var(--line); background: var(--near);
+  padding: 14px 24px; display: flex; align-items: center; gap: 10px;
+}
+.win__foot .spacer { flex: 1 1 auto; }
+.win__foot .foot-note { font-size: 12px; color: var(--ink-3); }
+
+.inst { display: grid; grid-template-columns: 268px minmax(0, 1fr); height: 100%; }
+.inst__side {
+  background: var(--paper); border-right: 1px solid var(--line);
+  padding: 26px 22px; display: flex; flex-direction: column;
+}
+.brandmark { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.brandmark__sq {
+  width: 26px; height: 26px; border-radius: 6px; background: var(--ink);
+  color: var(--paper); display: grid; place-items: center;
+  font-family: var(--mono); font-weight: 700; font-size: 12px;
+}
+.brandmark__txt { font-size: 14px; font-weight: 650; letter-spacing: -.01em; }
+.inst__ver { font-family: var(--mono); font-size: 11px; color: var(--ink-2); margin-bottom: 24px; }
+.steplist { list-style: none; margin: 0; padding: 0; }
+.steplist li {
+  display: flex; gap: 10px; align-items: flex-start;
+  font-size: 12.5px; color: var(--ink-3); padding: 6px 0;
+}
+.steplist li .dot {
+  flex: 0 0 auto; width: 16px; height: 16px; border-radius: 50%; margin-top: 2px;
+  border: 1px solid var(--line-2); background: var(--white);
+  display: grid; place-items: center; font-size: 9px; color: var(--ink-3);
+}
+.steplist li.is-done { color: var(--ink-2); }
+.steplist li.is-done .dot { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.steplist li.is-current { color: var(--ink); font-weight: 600; }
+.steplist li.is-current .dot { border-color: var(--ink); border-width: 2px; }
+.inst__main { padding: 30px 34px; overflow: auto; }
+.inst__main h2 { margin: 0 0 6px; font-size: 20px; letter-spacing: -.015em; }
+.inst__main .lede { margin: 0 0 22px; color: var(--ink-2); font-size: 13.5px; max-width: 62ch; }
+.inst__main h3 { font-size: 13px; margin: 0 0 8px; }
+
+.btn {
+  appearance: none; cursor: pointer;
+  border: 1px solid var(--line-2); background: var(--white); color: var(--ink);
+  border-radius: var(--r-sm); padding: 9px 18px; font-size: 13.5px; font-weight: 600;
+  min-height: 36px;
+}
+.btn:hover:not(:disabled) { background: var(--sunk); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn--primary { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.btn--primary:hover:not(:disabled) { background: #2a2722; }
+.btn--sm { padding: 5px 11px; font-size: 12.5px; min-height: 28px; }
+
+.field { margin-bottom: 16px; max-width: 520px; }
+.field > label, .field > .lbl {
+  display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px;
+}
+.field .help { font-size: 12px; color: var(--ink-3); margin-top: 5px; }
+.input {
+  width: 100%; background: var(--white);
+  border: 1px solid var(--line-2); border-bottom-color: var(--ink-3);
+  border-radius: var(--r-sm); padding: 9px 11px; font-size: 13.5px; min-height: 36px;
+}
+.input:focus { border-bottom: 2px solid var(--ink); padding-bottom: 8px; outline: none; }
+.inputrow { display: flex; gap: 8px; align-items: flex-start; }
+.inputrow .input { flex: 1 1 auto; }
+
+.choices { display: grid; gap: 8px; margin-bottom: 24px; max-width: 620px; }
+.choice {
+  display: flex; gap: 12px; align-items: flex-start;
+  border: 1px solid var(--line-2); border-radius: var(--r-md);
+  padding: 13px 15px; cursor: pointer; background: var(--white);
+}
+.choice:hover { background: var(--near); }
+.choice input { margin: 2px 0 0; width: 17px; height: 17px; accent-color: var(--ink); }
+.choice:has(input:checked) { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.choice__t { font-size: 13.5px; font-weight: 600; }
+.choice__d { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+
+.togglelist { border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+.togglerow {
+  display: grid; grid-template-columns: 1fr auto; gap: 14px;
+  padding: 12px 16px; align-items: center; background: var(--white);
+}
+.togglerow + .togglerow { border-top: 1px solid var(--line); }
+.togglerow__t { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.togglerow__d { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; max-width: 66ch; }
+.togglerow.is-off-critical { background: var(--warn-bg); }
+.switch { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch__track {
+  width: 42px; height: 22px; border-radius: 11px; background: var(--white);
+  border: 1px solid var(--ink-2); position: relative; transition: background .15s, border-color .15s;
+  flex: 0 0 auto;
+}
+.switch__track::after {
+  content: ""; position: absolute; left: 4px; top: 4px;
+  width: 12px; height: 12px; border-radius: 50%; background: var(--ink-2);
+  transition: transform .15s, background .15s;
+}
+.switch input:checked + .switch__track { background: var(--ink); border-color: var(--ink); }
+.switch input:checked + .switch__track::after { transform: translateX(20px); background: var(--paper); }
+.switch__state { font-size: 12px; color: var(--ink-2); min-width: 24px; }
+
+.pill {
+  display: inline-block; font-family: var(--mono); font-size: 10px;
+  letter-spacing: .08em; text-transform: uppercase;
+  border: 1px solid var(--line-2); border-radius: 3px; padding: 2px 6px; color: var(--ink-2);
+}
+.note {
+  border: 1px solid var(--line); border-left: 3px solid var(--ink-3);
+  background: var(--near); border-radius: var(--r-sm);
+  padding: 11px 14px; font-size: 12.5px; color: var(--ink-2); margin: 14px 0;
+}
+.note--warn { background: var(--warn-bg); border-color: #ecdcb9; border-left-color: var(--warn); color: #6b4700; }
+.note--ok { background: var(--ok-bg); border-color: #cfe2d7; border-left-color: var(--ok); color: #24523d; }
+.note strong { color: inherit; }
+
+.displays { display: flex; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
+.displaycard {
+  border: 1px solid var(--line-2); border-radius: var(--r-md); padding: 14px;
+  cursor: pointer; background: var(--white); width: 232px;
+}
+.displaycard:has(input:checked) { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.displaycard input { accent-color: var(--ink); }
+.displaycard__thumb {
+  background: var(--sunk); border: 1px solid var(--line); border-radius: var(--r-sm);
+  height: 92px; display: grid; place-items: center; margin-bottom: 10px;
+  font-family: var(--mono); font-size: 30px; color: var(--ink-3);
+}
+.displaycard__thumb.is-portrait { width: 62px; height: 110px; margin-inline: auto; }
+.displaycard__t { font-size: 13.5px; font-weight: 600; }
+.displaycard__d { font-size: 12px; color: var(--ink-2); }
+
+.previewbox {
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--near);
+  padding: 16px; display: flex; gap: 20px; align-items: center;
+}
+.previewscreen {
+  background: #000; border-radius: 4px; overflow: hidden; flex: 0 0 auto;
+  width: 200px; height: 112px; position: relative;
+}
+.previewscreen.is-portrait { width: 112px; height: 200px; }
+.previewmedia { position: absolute; inset: 0; display: grid; place-items: center; }
+.previewmedia__img {
+  background: var(--paper); color: var(--ink);
+  display: grid; place-items: center; font-family: var(--mono); font-size: 11px;
+}
+.fit-contain .previewmedia__img { width: 86%; height: 62%; }
+.fit-cover .previewmedia__img { width: 100%; height: 100%; }
+.fit-stretch .previewmedia__img { width: 100%; height: 100%; transform: skewX(-3deg) scaleY(1.06); }
+
+.progress {
+  height: 5px; border-radius: 3px; background: var(--line);
+  overflow: hidden; width: 100%;
+}
+.progress__bar { height: 100%; background: var(--ink); width: 0%; transition: width .3s linear; }
+.tasklist { list-style: none; margin: 0 0 18px; padding: 0; max-width: 640px; }
+.tasklist li {
+  display: flex; align-items: center; gap: 11px; padding: 8px 0;
+  font-size: 13.5px; color: var(--ink-3); border-bottom: 1px solid var(--line);
+}
+.tasklist li:last-child { border-bottom: 0; }
+.tasklist .mark {
+  width: 18px; height: 18px; border-radius: 50%; flex: 0 0 auto;
+  border: 1px solid var(--line-2); display: grid; place-items: center;
+  font-size: 10px; background: var(--white);
+}
+.tasklist li.is-active { color: var(--ink); font-weight: 600; }
+.tasklist li.is-active .mark { border-color: var(--ink); border-style: dashed; }
+.tasklist li.is-done { color: var(--ink); }
+.tasklist li.is-done .mark { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.tasklist li.is-warn .mark { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+.tasklist li .meta { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+.eventlog {
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.65;
+  background: var(--near); border: 1px solid var(--line); border-radius: var(--r-md);
+  padding: 12px 14px; height: 158px; overflow: auto; color: var(--ink-2);
+}
+.eventlog .t { color: var(--ink-3); }
+.eventlog .warn { color: var(--warn); }
+.eventlog .ok { color: var(--ok); }
+.eventlog .fail { color: var(--fail); }
+
+.card { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--white); }
+.card__head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--near);
+}
+.card__head h2 { margin: 0; font-size: 14.5px; }
+.card__head .spacer { flex: 1 1 auto; }
+.card__body { padding: 16px 18px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; margin: 0; font-size: 13px; }
+.kv dt { color: var(--ink-2); }
+.kv dd { margin: 0; text-align: right; font-weight: 500; }
+.kv > div { display: contents; }
+.badge {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+  border: 1px solid var(--line-2); border-radius: 3px; padding: 3px 7px; color: var(--ink-2);
+}
+.badge--ok { background: var(--ok-bg); border-color: #cfe2d7; color: var(--ok); }
+.badge--fail { background: var(--fail-bg); border-color: #eecdc6; color: var(--fail); }
+.badge--mute { background: var(--sunk); }
+code { font-family: var(--mono); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="win__bar" id="titlebar">
+    <span class="win__mark" aria-hidden="true">T</span>
+    <span class="win__title" id="wintitle">Install TomorrowOS Windows Player</span>
+    <span class="win__ctl">
+      <button type="button" class="close" id="btn-close" aria-label="Cancel installation">✕</button>
+    </span>
+  </div>
+  <div class="win__body">
+    <div class="inst" id="view-installer">
+      <div class="inst__side">
+        <div class="brandmark">
+          <span class="brandmark__sq" aria-hidden="true">T</span>
+          <span class="brandmark__txt">TomorrowOS</span>
+        </div>
+        <div class="inst__ver" id="side-ver">Windows Player 1.0.0 · x64</div>
+        <ol class="steplist" id="inst-steps"></ol>
+        <div style="margin-top:auto;font-size:11.5px;color:var(--ink-3)">Apache 2.0 · open source runtime</div>
+      </div>
+      <div class="inst__main" id="inst-main">
+        <div class="instpane" id="pane-welcome">
+          <h2>Install TomorrowOS Windows Player</h2>
+          <p class="lede">TomorrowOS will prepare this Windows device for reliable digital signage playback. Content plays from a local cache, so the screen keeps running when the network or CMS does not.</p>
+          <dl class="kv" style="max-width:520px;margin-bottom:18px">
+            <div><dt>Version</dt><dd id="kv-ver">1.0.0</dd></div>
+            <div><dt>Install location</dt><dd id="inst-path">C:\Program Files\TomorrowOS</dd></div>
+            <div><dt>Local cache</dt><dd id="kv-cache">C:\ProgramData\TomorrowOS\cache</dd></div>
+            <div><dt>Disk required</dt><dd>≈ 500 MB + cache</dd></div>
+          </dl>
+          <div class="field">
+            <button class="btn btn--sm" type="button" id="btn-change-path">Change install location</button>
+          </div>
+          <label class="choice" style="margin-bottom:8px">
+            <input type="checkbox" id="chk-terms">
+            <span>
+              <span class="choice__t">I accept the TomorrowOS licence terms</span>
+              <span class="choice__d">Apache 2.0. Third-party media codecs are covered by their own licences.</span>
+            </span>
+          </label>
+          <label class="choice">
+            <input type="checkbox" id="chk-fleet">
+            <span>
+              <span class="choice__t">Show silent / fleet deployment details</span>
+              <span class="choice__d">For imaging tools, MDM and RMM rollouts across many devices.</span>
+            </span>
+          </label>
+          <div class="note" id="fleet-note" hidden>
+            <strong>Silent install</strong><br>
+            <code>TomorrowOS-Windows-Setup.exe /silent /cms "https://cms.example.com" /passcode "secret" /orientation landscape /harden</code>
+            <br><br>Each device still stores its own maintenance passcode hash locally.
+          </div>
+        </div>
+
+        <div class="instpane" id="pane-options" hidden>
+          <h2>Installation options</h2>
+          <p class="lede">These choices decide how much of Windows TomorrowOS takes over. They can be changed later from the CMS or from maintenance mode.</p>
+          <h3>Setup type</h3>
+          <div class="choices" id="choices-setup"></div>
+          <h3>Device role</h3>
+          <div class="choices" id="choices-role"></div>
+          <div class="note" id="role-note"></div>
+        </div>
+
+        <div class="instpane" id="pane-hardening" hidden>
+          <h2>Prepare Windows for signage</h2>
+          <p class="lede">TomorrowOS will apply the following system changes. Recommended items are on by default. Turning off an essential item leaves the screen able to show Windows to the public.</p>
+          <div class="togglelist" id="hardening-list"></div>
+          <div class="note note--warn" id="hardening-warn" hidden></div>
+          <div class="note">
+            <strong>Windows updates stay enabled.</strong> Security updates remain on and will be scheduled outside playback hours, inside the maintenance window you choose.
+          </div>
+        </div>
+
+        <div class="instpane" id="pane-display" hidden>
+          <h2>Select playback display</h2>
+          <p class="lede">Choose which connected display shows content. TomorrowOS remembers this selection and reapplies it after restart.</p>
+          <div class="displays" id="display-list"></div>
+          <div class="grid2" style="max-width:none">
+            <div>
+              <div class="field">
+                <span class="lbl">Orientation</span>
+                <div class="choices" id="choices-orient"></div>
+              </div>
+              <div class="field">
+                <span class="lbl">Content fit</span>
+                <div class="choices" id="choices-fit"></div>
+              </div>
+            </div>
+            <div>
+              <div class="previewbox">
+                <div class="previewscreen fit-contain" id="fit-preview">
+                  <div class="previewmedia"><div class="previewmedia__img">16:9 media</div></div>
+                </div>
+                <div>
+                  <div style="font-size:13px;font-weight:600" id="preview-title">Live output preview</div>
+                  <div style="font-size:12.5px;color:var(--ink-2);margin-top:4px" id="preview-desc"></div>
+                  <button class="btn btn--sm" type="button" id="btn-identify" style="margin-top:12px">Identify displays</button>
+                </div>
+              </div>
+              <div class="note note--ok" style="margin-top:14px">This display selection is stored locally and reapplied automatically after a restart.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="instpane" id="pane-passcode" hidden>
+          <h2>Protect local device access</h2>
+          <p class="lede">Ordinary users cannot close or leave the player. Authorised technicians enter maintenance mode using a secure key combination and this device passcode.</p>
+          <div class="grid2" style="max-width:none">
+            <div>
+              <div class="field">
+                <label for="pc1">Maintenance passcode</label>
+                <div class="inputrow">
+                  <input class="input" id="pc1" type="password" inputmode="numeric" autocomplete="new-password">
+                  <button class="btn btn--sm" type="button" id="pc-show" aria-pressed="false">Show</button>
+                </div>
+              </div>
+              <div class="field">
+                <label for="pc2">Confirm passcode</label>
+                <input class="input" id="pc2" type="password" inputmode="numeric" autocomplete="new-password">
+              </div>
+              <ul id="pc-rules" style="list-style:none;margin:0 0 14px;padding:0;font-size:12.5px"></ul>
+              <div class="note note--warn">
+                Use a passcode unique to this site. A single passcode reused across a whole fleet is the most common cause of unauthorised screen access.
+              </div>
+            </div>
+            <div>
+              <div class="card" style="margin:0">
+                <div class="card__head"><h2>How a technician gets in</h2></div>
+                <div class="card__body">
+                  <ol style="margin:0;padding-left:20px;font-size:13px;color:var(--ink-2);line-height:1.9">
+                    <li>Hold <strong>Ctrl+Shift+Alt+M</strong> on the device.</li>
+                    <li>Enter this device passcode when prompted.</li>
+                    <li>Choose an approved maintenance action.</li>
+                  </ol>
+                  <div class="note" style="margin-bottom:0">
+                    The passcode is hashed and stored on this device only. There is no universal master password.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="instpane" id="pane-progress" hidden>
+          <h2 id="progress-title">Installing TomorrowOS</h2>
+          <p class="lede" id="progress-lede">This takes about a minute. Do not power off the device.</p>
+          <div class="progress" style="margin-bottom:18px"><div class="progress__bar" id="inst-bar"></div></div>
+          <ul class="tasklist" id="inst-tasks"></ul>
+          <div class="eventlog" id="inst-log" role="log" aria-live="polite"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="inst" id="view-setup" hidden>
+      <div class="inst__side">
+        <div class="brandmark">
+          <span class="brandmark__sq" aria-hidden="true">T</span>
+          <span class="brandmark__txt">TomorrowOS</span>
+        </div>
+        <div class="inst__ver">First-time setup</div>
+        <ol class="steplist" id="setup-steps"></ol>
+        <div style="margin-top:auto;font-size:11.5px;color:var(--ink-3)">Local configuration · nothing is sent until you continue</div>
+      </div>
+      <div class="inst__main">
+        <div class="instpane" id="pane-setup">
+          <h2>Device setup</h2>
+          <p class="lede">Installation is complete. Name this device and set its maintenance window. Everything here is stored locally and can be changed remotely later.</p>
+          <div class="grid2" style="max-width:none">
+            <div>
+              <div class="field">
+                <label for="dev-name">Device display name</label>
+                <input class="input" id="dev-name" value="Front Counter 01">
+                <div class="help">Shown in the CMS and on the pairing screen.</div>
+              </div>
+              <div class="field">
+                <label for="dev-site">Site or location name</label>
+                <input class="input" id="dev-site" value="">
+              </div>
+              <div class="field">
+                <label for="dev-tz">Time zone</label>
+                <select class="input" id="dev-tz">
+                  <option>(UTC+08:00) Perth</option>
+                  <option>(UTC+10:00) Sydney</option>
+                  <option>(UTC+07:00) Bangkok, Hanoi, Jakarta</option>
+                  <option>(UTC+00:00) London</option>
+                  <option>(UTC−05:00) New York</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="dev-window">Preferred maintenance window</label>
+                <select class="input" id="dev-window">
+                  <option value="02:00–04:00">02:00 – 04:00 daily</option>
+                  <option value="03:00–05:00">03:00 – 05:00 daily</option>
+                  <option value="00:30–02:30">00:30 – 02:30 daily</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <div class="card" style="margin:0">
+                <div class="card__head"><h2>Applied configuration</h2></div>
+                <div class="card__body"><dl class="kv" id="setup-summary"></dl></div>
+              </div>
+              <div class="note note--ok" style="margin-top:14px">
+                Once content is cached, this device plays without internet, without the CMS and without any cloud service.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="instpane" id="pane-endpoint" hidden>
+          <h2>Connect to your CMS</h2>
+          <p class="lede">Pairing needs a working connection once. After the device is paired and content is cached, playback no longer depends on this endpoint being reachable.</p>
+          <div class="grid2" style="max-width:none">
+            <div>
+              <div class="field">
+                <label for="cms-url">CMS URL</label>
+                <input class="input" id="cms-url" type="url" value="https://" spellcheck="false">
+                <div class="help">Must use HTTPS. This is the TomorrowOS-powered CMS that manages the device.</div>
+              </div>
+              <button class="btn" type="button" id="btn-test">Test connection</button>
+            </div>
+            <div>
+              <div class="card" style="margin:0">
+                <div class="card__head">
+                  <h2>Connection</h2><span class="spacer"></span>
+                  <span class="badge badge--mute" id="conn-badge">Not tested</span>
+                </div>
+                <div class="card__body">
+                  <p style="margin:0;font-size:13px;color:var(--ink-2)" id="conn-msg">No connection test has been run yet.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="win__foot">
+    <span class="foot-note" id="foot-note">Administrator permission required</span>
+    <span class="spacer"></span>
+    <button class="btn" type="button" id="btn-back" hidden>Back</button>
+    <button class="btn" type="button" id="btn-cancel">Cancel</button>
+    <button class="btn btn--primary" type="button" id="btn-next" disabled>Continue</button>
+  </div>
+</div>
+<script>
+const SETUP_TYPES = [
+  { id: 'standard', t: 'Standard installation', d: 'One device, configured here and paired to a CMS. Best for a single screen or a small site.' },
+  { id: 'fleet', t: 'Managed fleet installation', d: 'Use silent flags so imaging tools and RMM can roll out many identical devices.' },
+  { id: 'dev', t: 'Developer / test installation', d: 'Leaves Windows unhardened and keeps developer logging on. Not for production screens.' }
+];
+const ROLES = [
+  { id: 'dedicated', t: 'Dedicated signage player', d: 'This device does nothing except play content. Windows stays behind the player at all times.' },
+  { id: 'shared', t: 'Shared Windows device for testing only', d: 'The player runs in a normal window. Windows stays usable. No hardening is applied.' }
+];
+const HARDENING = [
+  { id: 'autostart', t: 'Start TomorrowOS automatically after login', d: 'Registers startup so playback resumes without anyone signing in at the device.', critical: true },
+  { id: 'sleep', t: 'Disable sleep', d: 'Stops Windows suspending the device during quiet hours.', critical: true },
+  { id: 'hibernate', t: 'Disable hibernation', d: 'Prevents hibernation and frees disk for the content cache.', critical: false },
+  { id: 'saver', t: 'Disable screen saver', d: 'Removes the screen saver so content is never covered.', critical: true },
+  { id: 'lock', t: 'Prevent automatic lock', d: 'Stops Windows showing the lock screen over content after inactivity.', critical: true },
+  { id: 'notif', t: 'Hide Windows notifications during playback', d: 'System and application toasts never appear over content.', critical: true },
+  { id: 'taskbar', t: 'Hide taskbar during playback', d: 'Keeps the taskbar and Start menu off screen while the player has focus.', critical: true },
+  { id: 'cursor', t: 'Hide mouse cursor after inactivity', d: 'Hides the pointer during playback.', critical: false },
+  { id: 'overlay', t: 'Disable fullscreen game overlays', d: 'Turns off Game Bar and capture overlays that can steal fullscreen focus.', critical: false },
+  { id: 'updates', t: 'Configure Windows update maintenance window', d: 'Updates remain enabled but install outside playback hours.', critical: true },
+  { id: 'watchdog', t: 'Start watchdog recovery service', d: 'Monitors the player heartbeat and restarts it if it crashes or freezes.', critical: true },
+  { id: 'fallback', t: 'Create fallback screen for recovery', d: 'Shows a branded local screen while playback is restoring.', critical: true }
+];
+const ORIENTS = [
+  { id: 'landscape', t: 'Landscape', d: 'No rotation applied.' },
+  { id: 'portrait-left', t: 'Portrait left', d: 'Rotates output 90° anticlockwise.' },
+  { id: 'portrait-right', t: 'Portrait right', d: 'Rotates output 90° clockwise.' }
+];
+const FITS = [
+  { id: 'contain', t: 'Contain', d: 'Whole asset visible. Unused edges filled with the fallback colour.' },
+  { id: 'cover', t: 'Cover', d: 'Fills the screen. Edges of the asset may be cropped.' },
+  { id: 'stretch', t: 'Stretch', d: 'Fills the screen and ignores aspect ratio.' }
+];
+const INST_STEPS = [
+  { id: 'welcome', label: 'Welcome' },
+  { id: 'options', label: 'Installation options' },
+  { id: 'hardening', label: 'Prepare Windows' },
+  { id: 'display', label: 'Playback display' },
+  { id: 'passcode', label: 'Local access' },
+  { id: 'progress', label: 'Install' }
+];
+const SETUP_STEPS = [
+  { id: 'setup', label: 'Device setup' },
+  { id: 'endpoint', label: 'CMS connection' }
+];
+const INSTALL_TASKS = [
+  { t: 'Installing player' },
+  { t: 'Installing watchdog service' },
+  { t: 'Creating local cache' },
+  { t: 'Applying Windows signage settings' },
+  { t: 'Registering startup service' },
+  { t: 'Preparing fallback content' },
+  { t: 'Verifying installation' }
+];
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const esc = (str) => String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+let pending = {};
+let phase = 'install'; // install | setup
+let instStep = 0;
+let setupStep = 0;
+let cmsOk = false;
+const S = {
+  installDir: 'C:\\Program Files\\TomorrowOS',
+  setupType: 'standard',
+  role: 'dedicated',
+  hardening: Object.fromEntries(HARDENING.map(h => [h.id, true])),
+  displayId: 0,
+  orientation: 'landscape',
+  fit: 'contain',
+  displays: []
+};
+
+const bridge = (() => {
+  let seq = 0;
+  const waiters = new Map();
+  window.chrome?.webview?.addEventListener('message', (ev) => {
+    let msg = ev.data;
+    if (typeof msg === 'string') {
+      try { msg = JSON.parse(msg); } catch { return; }
+    }
+    if (msg?.eventName === 'install.log') {
+      instLog(msg.data?.message || '', msg.data?.level || 'info');
+      return;
+    }
+    if (msg?.id != null && waiters.has(String(msg.id))) {
+      const { resolve, reject } = waiters.get(String(msg.id));
+      waiters.delete(String(msg.id));
+      if (msg.ok) resolve(msg.result);
+      else reject(new Error(msg.error || 'Host call failed'));
+    }
+  });
+  return {
+    call(method, params = {}) {
+      const id = String(++seq);
+      return new Promise((resolve, reject) => {
+        waiters.set(id, { resolve, reject });
+        window.chrome.webview.postMessage(JSON.stringify({ id, method, params }));
+      });
+    }
+  };
+})();
+
+function renderChoices(container, list, name, current, onPick) {
+  container.innerHTML = list.map(o => `
+    <label class="choice">
+      <input type="radio" name="${name}" value="${o.id}" ${o.id === current ? 'checked' : ''}>
+      <span><span class="choice__t">${esc(o.t)}</span><span class="choice__d">${esc(o.d)}</span></span>
+    </label>`).join('');
+  $$('input', container).forEach(i => i.addEventListener('change', () => onPick(i.value)));
+}
+
+function criticalOff() {
+  return HARDENING.filter(h => h.critical && !S.hardening[h.id]);
+}
+
+function passcodeValid() {
+  const a = $('#pc1').value, b = $('#pc2').value;
+  return pcRules(a).every(r => r.ok) && a === b && a.length > 0;
+}
+
+function pcRules(v) {
+  const seq = ['0123456789', '9876543210'];
+  return [
+    { ok: v.length >= 4, t: 'At least 4 digits' },
+    { ok: /^\d*$/.test(v) && v.length > 0, t: 'Digits only' },
+    { ok: v.length > 0 && !/^(\d)\1+$/.test(v), t: 'Not a single repeated digit' },
+    { ok: v.length > 0 && !seq.some(s => s.includes(v)), t: 'Not a straight run such as 1234' }
+  ];
+}
+
+function renderPasscodeRules() {
+  const v = $('#pc1').value, b = $('#pc2').value;
+  const rules = pcRules(v);
+  const match = { ok: v.length > 0 && v === b, t: 'Both entries match' };
+  $('#pc-rules').innerHTML = [...rules, match].map(r =>
+    `<li style="display:flex;gap:8px;padding:2px 0;color:${r.ok ? 'var(--ok)' : 'var(--ink-3)'}">
+      <span aria-hidden="true">${r.ok ? '✓' : '○'}</span><span>${esc(r.t)}</span></li>`).join('');
+  validate();
+}
+
+function renderHardening() {
+  $('#hardening-list').innerHTML = HARDENING.map(h => {
+    const on = S.hardening[h.id];
+    const bad = h.critical && !on;
+    return `<div class="togglerow ${bad ? 'is-off-critical' : ''}">
+      <div>
+        <div class="togglerow__t">${esc(h.t)}${h.critical ? ' <span class="pill">Recommended</span>' : ''}</div>
+        <div class="togglerow__d">${esc(h.d)}</div>
+      </div>
+      <label class="switch">
+        <span class="vh">${esc(h.t)}</span>
+        <input type="checkbox" data-harden="${h.id}" ${on ? 'checked' : ''}>
+        <span class="switch__track" aria-hidden="true"></span>
+        <span class="switch__state">${on ? 'On' : 'Off'}</span>
+      </label>
+    </div>`;
+  }).join('');
+  $$('[data-harden]').forEach(i => i.addEventListener('change', () => {
+    S.hardening[i.dataset.harden] = i.checked;
+    renderHardening();
+  }));
+  const off = criticalOff();
+  const warn = $('#hardening-warn');
+  warn.hidden = off.length === 0;
+  if (off.length) {
+    warn.innerHTML = `<strong>${off.length} recommended protection${off.length > 1 ? 's are' : ' is'} turned off.</strong> With ${esc(off.map(h => h.t.toLowerCase()).join(', '))} disabled, Windows can appear over content on a public screen.`;
+  }
+  validate();
+}
+
+function renderOptions() {
+  renderChoices($('#choices-setup'), SETUP_TYPES, 'setuptype', S.setupType, v => {
+    S.setupType = v;
+    if (v === 'dev') HARDENING.forEach(h => { S.hardening[h.id] = false; });
+    else HARDENING.forEach(h => { S.hardening[h.id] = true; });
+    renderHardening(); renderOptions();
+  });
+  renderChoices($('#choices-role'), ROLES, 'role', S.role, v => {
+    S.role = v;
+    if (v === 'shared') HARDENING.forEach(h => { S.hardening[h.id] = false; });
+    else if (S.setupType !== 'dev') HARDENING.forEach(h => { S.hardening[h.id] = true; });
+    renderHardening(); renderOptions(); validate();
+  });
+  $('#role-note').innerHTML = S.role === 'dedicated'
+    ? '<strong>Dedicated signage player enables:</strong> automatic startup, fullscreen playback, taskbar suppression, sleep prevention, notification suppression, watchdog recovery and protected maintenance access.'
+    : '<strong>Shared device.</strong> Windows stays fully usable, the player runs in a window and none of the signage protections are applied. Use this for development only.';
+}
+
+function renderDisplay() {
+  const list = S.displays.length ? S.displays : [{ id: 0, name: 'Display 1', res: '1920 × 1080', hz: '60 Hz', primary: true, portrait: false, model: 'Primary' }];
+  $('#display-list').innerHTML = list.map(d => `
+    <div class="displaycard">
+      <div class="displaycard__thumb ${d.portrait ? 'is-portrait' : ''}">${d.id + 1}</div>
+      <label class="choice" style="border:0;padding:0;gap:8px">
+        <input type="radio" name="display" value="${d.id}" ${d.id === S.displayId ? 'checked' : ''}>
+        <span>
+          <span class="displaycard__t">${esc(d.name)}${d.primary ? ' — Primary' : ''}</span>
+          <span class="displaycard__d">${esc(d.res)} · ${esc(d.hz || '—')}<br>${esc(d.model || '')}</span>
+        </span>
+      </label>
+    </div>`).join('');
+  $$('input[name="display"]').forEach(i => i.addEventListener('change', () => {
+    S.displayId = Number(i.value);
+    const d = list.find(x => x.id === S.displayId);
+    if (d?.portrait) S.orientation = 'portrait-right';
+    else S.orientation = 'landscape';
+    renderDisplay();
+  }));
+  renderChoices($('#choices-orient'), ORIENTS, 'orient', S.orientation, v => { S.orientation = v; renderDisplay(); });
+  renderChoices($('#choices-fit'), FITS, 'fit', S.fit, v => { S.fit = v; renderDisplay(); });
+  const portrait = S.orientation !== 'landscape';
+  const prev = $('#fit-preview');
+  prev.className = `previewscreen fit-${S.fit}` + (portrait ? ' is-portrait' : '');
+  $('#preview-title').textContent = `Preview — ${portrait ? 'portrait' : 'landscape'} output`;
+  $('#preview-desc').textContent = `${FITS.find(f => f.id === S.fit).d}`;
+}
+
+function renderInstallSteps() {
+  $('#inst-steps').innerHTML = INST_STEPS.map((s, i) => {
+    const cls = i < instStep ? 'is-done' : i === instStep ? 'is-current' : '';
+    return `<li class="${cls}"><span class="dot">${i < instStep ? '✓' : i + 1}</span><span>${esc(s.label)}</span></li>`;
+  }).join('');
+  INST_STEPS.forEach((s, i) => {
+    const pane = $('#pane-' + s.id);
+    if (pane) pane.hidden = i !== instStep;
+  });
+  $('#inst-main').scrollTop = 0;
+  validate();
+}
+
+function renderSetupSteps() {
+  $('#setup-steps').innerHTML = SETUP_STEPS.map((s, i) => {
+    const cls = i < setupStep ? 'is-done' : i === setupStep ? 'is-current' : '';
+    return `<li class="${cls}"><span class="dot">${i < setupStep ? '✓' : i + 1}</span><span>${esc(s.label)}</span></li>`;
+  }).join('');
+  $('#pane-setup').hidden = setupStep !== 0;
+  $('#pane-endpoint').hidden = setupStep !== 1;
+  $('#setup-summary').innerHTML = `
+    <div><dt>Install location</dt><dd>${esc(S.installDir)}</dd></div>
+    <div><dt>Role</dt><dd>${esc(S.role)}</dd></div>
+    <div><dt>Display</dt><dd>${S.displayId + 1}</dd></div>
+    <div><dt>Orientation</dt><dd>${esc(S.orientation)}</dd></div>
+    <div><dt>Content fit</dt><dd>${esc(S.fit)}</dd></div>`;
+  validate();
+}
+
+function validate() {
+  const btn = $('#btn-next');
+  const back = $('#btn-back');
+  const cancel = $('#btn-cancel');
+  let ok = true, label = 'Continue', note = 'Administrator permission required';
+
+  if (phase === 'install') {
+    const id = INST_STEPS[instStep].id;
+    back.hidden = instStep === 0 || instStep === 5;
+    cancel.hidden = instStep === 5;
+    btn.hidden = instStep === 5 && !btn.dataset.ready;
+    if (id === 'welcome') { ok = $('#chk-terms').checked; note = 'Administrator permission required to install under Program Files.'; }
+    if (id === 'options') { note = S.role === 'dedicated' ? 'Dedicated mode takes over the Windows shell for this device.' : 'Shared mode leaves Windows fully usable.'; }
+    if (id === 'hardening') { label = 'Apply and continue'; note = criticalOff().length ? 'Some recommended protections are off.' : 'All recommended protections are on.'; }
+    if (id === 'display') { note = 'The chosen display is stored locally.'; }
+    if (id === 'passcode') { ok = passcodeValid(); label = 'Install'; note = 'The passcode is hashed and stored on this device only.'; }
+    if (id === 'progress' && btn.dataset.ready === '1') {
+      btn.hidden = false; ok = true; label = 'Continue to device setup';
+      note = 'Watchdog ready · installation complete';
+    }
+  } else {
+    back.hidden = setupStep === 0;
+    cancel.hidden = false;
+    btn.hidden = false;
+    if (setupStep === 0) {
+      ok = $('#dev-name').value.trim().length > 0;
+      note = 'Local configuration · nothing is sent until you continue';
+    } else {
+      ok = cmsOk;
+      label = 'Finish and launch';
+      note = cmsOk ? 'CMS endpoint confirmed' : 'Test the CMS connection to continue';
+    }
+  }
+
+  btn.disabled = !ok;
+  btn.textContent = label;
+  $('#foot-note').textContent = note;
+}
+
+function instLog(msg, level = 'info') {
+  const el = document.createElement('div');
+  if (level === 'warn' || level === 'ok' || level === 'fail') el.className = level;
+  el.innerHTML = `<span class="t">${new Date().toTimeString().slice(0, 8)}</span>  ${esc(msg)}`;
+  $('#inst-log').appendChild(el);
+  $('#inst-log').scrollTop = $('#inst-log').scrollHeight;
+}
+
+async function runInstall() {
+  instStep = 5;
+  delete $('#btn-next').dataset.ready;
+  renderInstallSteps();
+  $('#progress-title').textContent = 'Installing TomorrowOS';
+  $('#progress-lede').textContent = 'This takes about a minute. Do not power off the device.';
+  $('#inst-log').innerHTML = '';
+  $('#inst-bar').style.width = '0%';
+  $('#btn-next').hidden = true;
+  $('#btn-cancel').hidden = true;
+  $('#btn-back').hidden = true;
+
+  const render = (i, done) => {
+    $('#inst-tasks').innerHTML = INSTALL_TASKS.map((t, k) => {
+      const cls = done.includes(k) ? 'is-done' : k === i ? 'is-active' : '';
+      const mark = done.includes(k) ? '✓' : k === i ? '·' : '';
+      return `<li class="${cls}"><span class="mark">${mark}</span><span>${esc(t.t)}</span>
+        <span class="meta">${done.includes(k) ? 'done' : k === i ? 'working' : 'queued'}</span></li>`;
+    }).join('');
+  };
+
+  const done = [];
+  instLog('Installer started');
+  instLog('Target: ' + S.installDir);
+
+  const installPromise = bridge.call('host.install', {
+    installDir: S.installDir,
+    orientation: S.orientation,
+    displayIndex: S.displayId,
+    fit: S.fit,
+    passcode: $('#pc1').value,
+    setupType: S.setupType,
+    role: S.role,
+    hardening: S.hardening
+  });
+
+  for (let i = 0; i < INSTALL_TASKS.length; i++) {
+    render(i, done);
+    await wait(i === 3 ? 900 : 450);
+    done.push(i);
+    $('#inst-bar').style.width = Math.round(((i + 1) / INSTALL_TASKS.length) * 100) + '%';
+    render(i + 1, done);
+  }
+
+  try {
+    pending = await installPromise;
+    instLog('Installation complete', 'ok');
+    $('#progress-title').textContent = 'Installation complete';
+    $('#progress-lede').textContent = 'TomorrowOS is installed and Windows is prepared for signage.';
+    $('#btn-next').dataset.ready = '1';
+    $('#btn-next').hidden = false;
+    validate();
+  } catch (err) {
+    instLog(String(err.message || err), 'fail');
+    $('#progress-title').textContent = 'Installation failed';
+    $('#progress-lede').textContent = err.message || String(err);
+    $('#btn-cancel').hidden = false;
+    $('#btn-cancel').textContent = 'Close';
+  }
+}
+
+function enterSetup() {
+  phase = 'setup';
+  setupStep = 0;
+  $('#view-installer').hidden = true;
+  $('#view-setup').hidden = false;
+  $('#wintitle').textContent = 'TomorrowOS Player — first-time setup';
+  $('#btn-cancel').hidden = false;
+  $('#btn-cancel').textContent = 'Cancel';
+  renderSetupSteps();
+}
+
+async function finish() {
+  $('#btn-next').disabled = true;
+  $('#btn-next').textContent = 'Launching…';
+  await bridge.call('host.finalize', {
+    cmsEndpoint: $('#cms-url').value.trim(),
+    deviceName: $('#dev-name').value.trim(),
+    siteName: $('#dev-site').value.trim(),
+    timeZone: $('#dev-tz').value,
+    maintenanceWindow: $('#dev-window').value
+  });
+  await bridge.call('host.close');
+}
+
+$('#titlebar').addEventListener('mousedown', (e) => {
+  if (e.target.closest('button')) return;
+  bridge.call('host.beginDrag').catch(() => {});
+});
+$('#btn-close').onclick = () => bridge.call('host.close');
+$('#btn-cancel').onclick = () => bridge.call('host.close');
+$('#chk-terms').onchange = validate;
+$('#chk-fleet').onchange = () => { $('#fleet-note').hidden = !$('#chk-fleet').checked; };
+$('#btn-change-path').onclick = async () => {
+  const path = await bridge.call('host.pickFolder', { path: S.installDir });
+  if (path) {
+    S.installDir = path;
+    $('#inst-path').textContent = path;
+  }
+};
+$('#btn-identify').onclick = () => bridge.call('host.identifyDisplays');
+$('#pc1').oninput = renderPasscodeRules;
+$('#pc2').oninput = renderPasscodeRules;
+$('#pc-show').onclick = () => {
+  const show = $('#pc1').type === 'password';
+  $('#pc1').type = show ? 'text' : 'password';
+  $('#pc2').type = show ? 'text' : 'password';
+  $('#pc-show').textContent = show ? 'Hide' : 'Show';
+  $('#pc-show').setAttribute('aria-pressed', String(show));
+};
+$('#dev-name').oninput = validate;
+$('#btn-test').onclick = async () => {
+  const badge = $('#conn-badge');
+  const msg = $('#conn-msg');
+  badge.className = 'badge badge--mute';
+  badge.textContent = 'Testing…';
+  msg.textContent = 'Contacting CMS…';
+  cmsOk = false;
+  validate();
+  try {
+    const res = await bridge.call('host.testCms', { url: $('#cms-url').value.trim() });
+    cmsOk = !!res.ok;
+    badge.className = cmsOk ? 'badge badge--ok' : 'badge badge--fail';
+    badge.textContent = cmsOk ? 'Connected' : 'Failed';
+    msg.textContent = res.message || (cmsOk ? 'OK' : 'Could not reach CMS');
+  } catch (err) {
+    cmsOk = false;
+    badge.className = 'badge badge--fail';
+    badge.textContent = 'Failed';
+    msg.textContent = err.message || String(err);
+  }
+  validate();
+};
+
+$('#btn-back').onclick = () => {
+  if (phase === 'install') {
+    if (instStep > 0 && instStep < 5) { instStep--; renderInstallSteps(); }
+  } else if (setupStep > 0) {
+    setupStep--;
+    $('#wintitle').textContent = 'TomorrowOS Player — first-time setup';
+    renderSetupSteps();
+  }
+};
+
+$('#btn-next').onclick = async () => {
+  if (phase === 'install') {
+    const id = INST_STEPS[instStep].id;
+    if (id === 'passcode') { await runInstall(); return; }
+    if (id === 'progress') { enterSetup(); return; }
+    instStep++;
+    if (INST_STEPS[instStep].id === 'options') renderOptions();
+    if (INST_STEPS[instStep].id === 'hardening') renderHardening();
+    if (INST_STEPS[instStep].id === 'display') renderDisplay();
+    if (INST_STEPS[instStep].id === 'passcode') renderPasscodeRules();
+    renderInstallSteps();
+    return;
+  }
+  if (setupStep === 0) {
+    setupStep = 1;
+    $('#wintitle').textContent = 'TomorrowOS Player — CMS connection';
+    renderSetupSteps();
+    return;
+  }
+  await finish();
+};
+
+(async () => {
+  try {
+    const boot = await bridge.call('host.bootstrap');
+    S.installDir = boot.installDir || S.installDir;
+    S.displays = boot.displays || [];
+    if (S.displays.length) S.displayId = S.displays.find(d => d.primary)?.id ?? 0;
+    $('#inst-path').textContent = S.installDir;
+    $('#kv-cache').textContent = boot.cacheDir || $('#kv-cache').textContent;
+    $('#kv-ver').textContent = boot.version || '1.0.0';
+    $('#side-ver').textContent = `Windows Player ${boot.version || '1.0.0'} · x64`;
+  } catch (err) {
+    console.error(err);
+  }
+  renderOptions();
+  renderHardening();
+  renderDisplay();
+  renderPasscodeRules();
+  renderInstallSteps();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Quiet State — Portrait</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #050505;
+    color: #ffffff;
+    font-family: 'Inter Tight', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    cursor: none;
+  }
+
+  :root {
+    --bg: #050505;
+    --text: #ffffff;
+    --text-dim: #b0b0b0;
+    --text-dimmer: #888;
+    --text-label: #d4d4d4;
+    --sans: 'Inter Tight', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  html:not(.qs-ready) body {
+    visibility: hidden;
+  }
+
+  /* Force portrait aspect in preview — remove this rule for real device */
+  body {
+    /* For preview, simulate a 9:16 panel by max-width:
+       Real Tizen/BrightSign portrait devices report 1080×1920 (or rotated), so the
+       CSS naturally fills viewport. In a desktop browser preview, this box gives
+       a sensible portrait shape. */
+  }
+
+  .ambient {
+    position: fixed; inset: 0; z-index: 0;
+    background:
+      radial-gradient(ellipse at 50% 35%, rgba(255,255,255,0.045), transparent 60%),
+      radial-gradient(ellipse at 30% 85%, rgba(255,255,255,0.02), transparent 55%),
+      radial-gradient(ellipse at 70% 15%, rgba(255,255,255,0.02), transparent 55%);
+    animation: drift 60s ease-in-out infinite alternate;
+  }
+  @keyframes drift {
+    0% { transform: scale(1) translateY(0); }
+    100% { transform: scale(1.04) translateY(-1.5%); }
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 1;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(255,255,255,0.007) 2px, rgba(255,255,255,0.007) 3px);
+  }
+  body::after {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 2;
+    opacity: 0.04; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* ============ STAGE — vertical layout ============ */
+  .stage {
+    position: relative;
+    z-index: 10;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 8% 8%;
+    text-align: center;
+  }
+
+  .hero {
+    max-width: 80%;
+    animation: heroIn 2.5s var(--ease);
+  }
+  @keyframes heroIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .hero-mark {
+    width: 120px;
+    height: 120px;
+    margin: 0 auto 40px;
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 20px;
+    display: grid;
+    place-items: center;
+    font-family: var(--sans);
+    font-size: 56px;
+    font-weight: 500;
+    letter-spacing: -0.04em;
+    background: rgba(255,255,255,0.02);
+    animation: breathe 4s ease-in-out infinite;
+  }
+  @keyframes breathe {
+    0%, 100% { opacity: 0.9; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.015); }
+  }
+
+  .hero-mark.has-logo {
+    width: auto;
+    height: auto;
+    min-height: 0;
+    border: none;
+    background: transparent;
+    border-radius: 0;
+    display: block;
+    margin: 0 auto 28px;
+    animation: none;
+  }
+
+  .hero-mark-img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: min(120px, 40vw);
+    max-height: min(64px, 12vh);
+    margin: 0 auto;
+    object-fit: contain;
+  }
+
+  .hero-name {
+    font-family: var(--sans);
+    font-weight: 300;
+    font-size: clamp(56px, 9vw, 140px);
+    line-height: 1;
+    letter-spacing: -0.04em;
+    margin-bottom: 36px;
+    word-break: break-word;
+  }
+
+  .hero-tagline {
+    font-family: var(--sans);
+    font-weight: 200;
+    font-size: clamp(18px, 2.4vw, 28px);
+    color: var(--text-dim);
+    letter-spacing: 0.02em;
+    line-height: 1.4;
+  }
+
+  /* ============ STATUS LINE (centred under hero) ============ */
+  .status-line {
+    position: fixed;
+    bottom: 7vh;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+    opacity: 0;
+    animation: statusFade 1.5s var(--ease) 1.5s forwards;
+    white-space: nowrap;
+  }
+  @keyframes statusFade {
+    to { opacity: 1; }
+  }
+
+  .live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text);
+    box-shadow: 0 0 8px rgba(255,255,255,0.6);
+    animation: pulse 2s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .status-text { color: var(--text-label); }
+  .status-text .em { color: var(--text); }
+  .status-sep { color: rgba(255,255,255,0.2); margin: 0 4px; }
+
+  /* ============ CLOCK (top) ============ */
+  .clock {
+    position: fixed;
+    top: 5vh;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    text-align: center;
+    font-family: var(--mono);
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+    opacity: 0;
+    animation: statusFade 1.5s var(--ease) 1.5s forwards;
+  }
+  .clock-time { color: var(--text); font-size: 16px; }
+  .clock-tz { color: var(--text-dimmer); font-size: 11px; margin-top: 4px; }
+
+  /* ============ REMOTE CODE INDICATOR ============ */
+  .remote-indicator {
+    position: fixed;
+    bottom: 3vh;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 25;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.4s var(--ease);
+  }
+  .remote-indicator.show { opacity: 1; }
+  .remote-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.18);
+    transition: background 0.2s ease, transform 0.2s ease;
+  }
+  .remote-dot.filled {
+    background: var(--text);
+    transform: scale(1.1);
+  }
+  .remote-dot.error {
+    background: rgba(255, 90, 90, 0.8);
+  }
+
+  /* ============ DIAGNOSTIC OVERLAY ============ */
+  .diag-trigger {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 80px;
+    height: 80px;
+    z-index: 30;
+    cursor: pointer;
+  }
+  .diag-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(0, 0, 0, 0.92);
+    backdrop-filter: blur(20px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 6vw;
+  }
+  .diag-overlay.show {
+    display: flex;
+    animation: diagIn 0.3s var(--ease);
+  }
+  @keyframes diagIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .diag-panel {
+    width: min(640px, 92vw);
+    background: rgba(15, 15, 15, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+    padding: 32px 32px;
+    font-family: var(--mono);
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .diag-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 24px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .diag-title {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--text-label);
+  }
+  .diag-close {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dimmer);
+    letter-spacing: 0.1em;
+  }
+
+  .diag-row {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 14px;
+    padding: 8px 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .diag-row:last-of-type { border-bottom: none; }
+  .diag-key {
+    color: var(--text-dimmer);
+    letter-spacing: 0.04em;
+    font-weight: 400;
+    text-transform: uppercase;
+    font-size: 10px;
+    padding-top: 2px;
+  }
+  .diag-val { color: var(--text); word-break: break-word; }
+  .diag-val .ok { color: #b0b0b0; }
+  .diag-val .dim { color: var(--text-dim); }
+
+  .diag-actions {
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .diag-btn {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: var(--text);
+    padding: 9px 16px;
+    border-radius: 100px;
+    font-family: var(--sans);
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    letter-spacing: -0.005em;
+  }
+  .diag-btn:hover {
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.25);
+  }
+  .diag-btn.primary {
+    background: var(--text);
+    color: var(--bg);
+    border-color: var(--text);
+  }
+  .diag-btn.primary:hover {
+    background: #f0f0f0;
+  }
+
+  .diag-hint {
+    margin-top: 22px;
+    font-family: var(--mono);
+    font-size: 9.5px;
+    color: var(--text-dimmer);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="ambient"></div>
+
+<!-- ============ CLOCK (top, portrait) ============ -->
+<div class="clock">
+  <div class="clock-time" id="clockTime">14:32</div>
+</div>
+
+<!-- ============ HERO ============ -->
+<div class="stage">
+  <div class="hero">
+    <div class="hero-mark">N</div>
+    <h1 class="hero-name">Network Name</h1>
+    <p class="hero-tagline">This screen is ready.</p>
+  </div>
+</div>
+
+<!-- ============ STATUS LINE ============ -->
+<div class="status-line">
+  <span class="live-dot"></span>
+  <span class="status-text">
+    <span class="em">Connected</span>
+    <span class="status-sep">·</span>
+    <span class="dim">Awaiting content</span>
+  </span>
+</div>
+
+<!-- ============ DIAGNOSTIC TRIGGER ============ -->
+<div class="diag-trigger" id="diagTrigger" title="Hold to show diagnostics"></div>
+
+<!-- ============ REMOTE CODE INDICATOR ============ -->
+<div class="remote-indicator" id="remoteIndicator">
+  <div class="remote-dot" data-slot="0"></div>
+  <div class="remote-dot" data-slot="1"></div>
+  <div class="remote-dot" data-slot="2"></div>
+  <div class="remote-dot" data-slot="3"></div>
+</div>
+
+<!-- ============ DIAGNOSTIC OVERLAY ============ -->
+<div class="diag-overlay" id="diagOverlay">
+  <div class="diag-panel">
+    <div class="diag-head">
+      <div class="diag-title">Screen Status</div>
+      <div class="diag-close">ESC TO CLOSE</div>
+    </div>
+
+    <div class="diag-row">
+      <div class="diag-key">Device</div>
+      <div class="diag-val">Storefront — Menu Board A</div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">Network</div>
+      <div class="diag-val">Network Name</div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">Serial Number</div>
+      <div class="diag-val">7SHJ437KJS</div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">Device ID</div>
+      <div class="diag-val">NET-A-C49E8N</div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">IP Address</div>
+      <div class="diag-val">192.168.1.84 <span class="dim">/ 18ms</span></div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">Status</div>
+      <div class="diag-val"><span class="ok">Idle</span> <span class="dim">— no active schedule</span></div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">Last Content</div>
+      <div class="diag-val">Breakfast Menu <span class="dim">— ended 14m ago</span></div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">Next Content</div>
+      <div class="diag-val">Lunch Menu <span class="dim">— 11:00 (in 2h 14m)</span></div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">Player</div>
+      <div class="diag-val">v1.4.2 <span class="dim">— uptime 12d 4h</span></div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">Storage</div>
+      <div class="diag-val">2.4 GB <span class="dim">/ 32 GB · 7% used</span></div>
+    </div>
+
+    <div class="diag-actions">
+      <button class="diag-btn primary">Force resume</button>
+      <button class="diag-btn">Override now</button>
+      <button class="diag-btn">Refresh</button>
+      <button class="diag-btn">Reboot</button>
+    </div>
+
+    <div class="diag-hint">Tap anywhere to close</div>
+  </div>
+</div>
+
+<script src="./quiet-state-bind.js"></script>
+<script>
+  // ============ Remote-code unlock ============
+  //
+  // OPERATOR PATH (production):
+  //   Point remote at screen. Press the 4-digit unlock code.
+  //   Default: 0-0-0-0. Configurable in CMS Settings.
+  //
+  // FALLBACK PATHS:
+  //   - Long-press top-right corner (touch / mouse)
+  //   - Press 'D' on a keyboard
+  //   - Press Escape — closes the overlay
+
+  const UNLOCK_CODE = '0000';
+  const SEQ_TIMEOUT_MS = 4000;
+  const indicator = document.getElementById('remoteIndicator');
+  const dots = indicator.querySelectorAll('.remote-dot');
+  const diagOverlay = document.getElementById('diagOverlay');
+
+  let codeBuffer = '';
+  let seqTimer = null;
+
+  function resetSequence() {
+    codeBuffer = '';
+    dots.forEach(d => d.classList.remove('filled', 'error'));
+    indicator.classList.remove('show');
+    if (seqTimer) { clearTimeout(seqTimer); seqTimer = null; }
+  }
+
+  function flashError() {
+    dots.forEach(d => { d.classList.remove('filled'); d.classList.add('error'); });
+    setTimeout(resetSequence, 800);
+  }
+
+  function pushDigit(digit) {
+    if (codeBuffer.length >= UNLOCK_CODE.length) return;
+    indicator.classList.add('show');
+    codeBuffer += digit;
+    dots[codeBuffer.length - 1].classList.add('filled');
+
+    if (seqTimer) clearTimeout(seqTimer);
+    seqTimer = setTimeout(resetSequence, SEQ_TIMEOUT_MS);
+
+    if (codeBuffer.length === UNLOCK_CODE.length) {
+      if (codeBuffer === UNLOCK_CODE) {
+        clearTimeout(seqTimer);
+        setTimeout(() => {
+          diagOverlay.classList.add('show');
+          resetSequence();
+        }, 200);
+      } else {
+        flashError();
+      }
+    }
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (/^[0-9]$/.test(e.key)) {
+      pushDigit(e.key);
+      return;
+    }
+    if (e.key === 'd' || e.key === 'D') {
+      diagOverlay.classList.toggle('show');
+    }
+    if (e.key === 'Escape') {
+      diagOverlay.classList.remove('show');
+      resetSequence();
+    }
+  });
+
+  // Long-press fallback
+  const diagTrigger = document.getElementById('diagTrigger');
+  let pressTimer = null;
+  function startPress() { pressTimer = setTimeout(() => diagOverlay.classList.add('show'), 800); }
+  function endPress() { clearTimeout(pressTimer); }
+  diagTrigger.addEventListener('mousedown', startPress);
+  diagTrigger.addEventListener('touchstart', startPress);
+  diagTrigger.addEventListener('mouseup', endPress);
+  diagTrigger.addEventListener('mouseleave', endPress);
+  diagTrigger.addEventListener('touchend', endPress);
+
+  diagOverlay.addEventListener('click', () => {
+    diagOverlay.classList.remove('show');
+  });
+</script>
+
+</body>
+</html>

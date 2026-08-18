@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Quiet State — Landscape</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #050505;
+    color: #ffffff;
+    font-family: 'Inter Tight', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    cursor: none;
+  }
+
+  :root {
+    --bg: #050505;
+    --text: #ffffff;
+    --text-dim: #b0b0b0;
+    --text-dimmer: #888;
+    --text-label: #d4d4d4;
+    --sans: 'Inter Tight', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  html:not(.qs-ready) body {
+    visibility: hidden;
+  }
+
+  /* ============ AMBIENT BACKDROP ============ */
+  .ambient {
+    position: fixed; inset: 0; z-index: 0;
+    background:
+      radial-gradient(ellipse at 50% 40%, rgba(255,255,255,0.04), transparent 65%),
+      radial-gradient(ellipse at 20% 80%, rgba(255,255,255,0.02), transparent 60%),
+      radial-gradient(ellipse at 80% 20%, rgba(255,255,255,0.02), transparent 60%);
+    animation: drift 60s ease-in-out infinite alternate;
+  }
+  @keyframes drift {
+    0% { transform: scale(1) translateX(0); }
+    100% { transform: scale(1.05) translateX(-2%); }
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 1;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(255,255,255,0.007) 2px, rgba(255,255,255,0.007) 3px);
+  }
+  body::after {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 2;
+    opacity: 0.04; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* ============ HERO CENTER ============ */
+  .stage {
+    position: relative;
+    z-index: 10;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6%;
+  }
+
+  .hero {
+    text-align: center;
+    max-width: 70%;
+    animation: heroIn 2.5s var(--ease);
+  }
+  @keyframes heroIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .hero-mark {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 28px;
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    font-family: var(--sans);
+    font-size: 40px;
+    font-weight: 500;
+    letter-spacing: -0.04em;
+    background: rgba(255,255,255,0.02);
+    animation: breathe 4s ease-in-out infinite;
+  }
+  @keyframes breathe {
+    0%, 100% { opacity: 0.9; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.015); }
+  }
+
+  /* Brand logo above hero name — fixed size, no animation */
+  .hero-mark.has-logo {
+    width: auto;
+    height: auto;
+    min-height: 0;
+    border: none;
+    background: transparent;
+    border-radius: 0;
+    display: block;
+    margin: 0 auto 24px;
+    animation: none;
+  }
+
+  .hero-mark-img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: min(140px, 32vw);
+    max-height: min(72px, 14vh);
+    margin: 0 auto;
+    object-fit: contain;
+  }
+
+  .hero-name {
+    font-family: var(--sans);
+    font-weight: 300;
+    font-size: clamp(48px, 7vw, 120px);
+    line-height: 1;
+    letter-spacing: -0.04em;
+    margin-bottom: 28px;
+  }
+
+  .hero-tagline {
+    font-family: var(--sans);
+    font-weight: 200;
+    font-size: clamp(16px, 1.5vw, 22px);
+    color: var(--text-dim);
+    letter-spacing: 0.02em;
+    line-height: 1.4;
+  }
+
+  /* ============ STATUS LINE (operator-facing) ============ */
+  .status-line {
+    position: fixed;
+    bottom: 32px;
+    left: 32px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+    opacity: 0;
+    animation: statusFade 1.5s var(--ease) 1.5s forwards;
+  }
+  @keyframes statusFade {
+    to { opacity: 1; }
+  }
+
+  .live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text);
+    box-shadow: 0 0 8px rgba(255,255,255,0.6);
+    animation: pulse 2s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .status-text { color: var(--text-label); }
+  .status-text .em { color: var(--text); }
+  .status-sep { color: rgba(255,255,255,0.2); margin: 0 4px; }
+
+  /* ============ CLOCK ============ */
+  .clock {
+    position: fixed;
+    bottom: 32px;
+    right: 32px;
+    z-index: 20;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+    opacity: 0;
+    animation: statusFade 1.5s var(--ease) 1.5s forwards;
+    text-align: right;
+  }
+  .clock-time { color: var(--text); font-size: 14px; }
+  .clock-tz { color: var(--text-dimmer); font-size: 11px; margin-top: 2px; }
+
+  /* ============ REMOTE CODE INDICATOR ============ */
+  .remote-indicator {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 25;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.4s var(--ease);
+  }
+  .remote-indicator.show { opacity: 1; }
+  .remote-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.18);
+    transition: background 0.2s ease, transform 0.2s ease;
+  }
+  .remote-dot.filled {
+    background: var(--text);
+    transform: scale(1.1);
+  }
+  .remote-dot.error {
+    background: rgba(255, 90, 90, 0.8);
+  }
+
+  /* ============ DIAGNOSTIC OVERLAY (operator) ============ */
+  .diag-trigger {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 80px;
+    height: 80px;
+    z-index: 30;
+    cursor: pointer;
+  }
+  .diag-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(0, 0, 0, 0.92);
+    backdrop-filter: blur(20px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 6vw;
+  }
+  .diag-overlay.show {
+    display: flex;
+    animation: diagIn 0.3s var(--ease);
+  }
+  @keyframes diagIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .diag-panel {
+    width: min(720px, 90vw);
+    background: rgba(15, 15, 15, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+    padding: 36px 40px;
+    font-family: var(--mono);
+  }
+
+  .diag-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 28px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .diag-title {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--text-label);
+  }
+  .diag-close {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dimmer);
+    letter-spacing: 0.1em;
+  }
+
+  .diag-row {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 16px;
+    padding: 9px 0;
+    font-size: 13px;
+    line-height: 1.5;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .diag-row:last-of-type { border-bottom: none; }
+  .diag-key {
+    color: var(--text-dimmer);
+    letter-spacing: 0.04em;
+    font-weight: 400;
+    text-transform: uppercase;
+    font-size: 10.5px;
+    padding-top: 2px;
+  }
+  .diag-val { color: var(--text); }
+  .diag-val .ok { color: #b0b0b0; }
+  .diag-val .dim { color: var(--text-dim); }
+
+  .diag-actions {
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .diag-btn {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: var(--text);
+    padding: 10px 18px;
+    border-radius: 100px;
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    letter-spacing: -0.005em;
+  }
+  .diag-btn:hover {
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.25);
+  }
+  .diag-btn.primary {
+    background: var(--text);
+    color: var(--bg);
+    border-color: var(--text);
+  }
+  .diag-btn.primary:hover {
+    background: #f0f0f0;
+  }
+
+  .diag-hint {
+    margin-top: 28px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dimmer);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="ambient"></div>
+
+<!-- ============ HERO ============ -->
+<div class="stage">
+  <div class="hero">
+    <div class="hero-mark">N</div>
+    <h1 class="hero-name">Network Name</h1>
+    <p class="hero-tagline">This screen is ready.</p>
+  </div>
+</div>
+
+<!-- ============ STATUS LINE ============ -->
+<div class="status-line">
+  <span class="live-dot"></span>
+  <span class="status-text">
+    <span class="em">Connected</span>
+    <span class="status-sep">·</span>
+    <span class="dim">Awaiting content</span>
+  </span>
+</div>
+
+<!-- ============ CLOCK ============ -->
+<div class="clock">
+  <div class="clock-time" id="clockTime">14:32</div>
+</div>
+
+<!-- ============ DIAGNOSTIC TRIGGER (hidden tap-zone, top-right) ============ -->
+<div class="diag-trigger" id="diagTrigger" title="Hold to show diagnostics"></div>
+
+<!-- ============ REMOTE CODE INDICATOR ============ -->
+<div class="remote-indicator" id="remoteIndicator">
+  <div class="remote-dot" data-slot="0"></div>
+  <div class="remote-dot" data-slot="1"></div>
+  <div class="remote-dot" data-slot="2"></div>
+  <div class="remote-dot" data-slot="3"></div>
+</div>
+
+<!-- ============ DIAGNOSTIC OVERLAY ============ -->
+<div class="diag-overlay" id="diagOverlay">
+  <div class="diag-panel">
+    <div class="diag-head">
+      <div class="diag-title">Screen Status</div>
+      <div class="diag-close">ESC TO CLOSE</div>
+    </div>
+
+    <div class="diag-row">
+      <div class="diag-key">Device</div>
+      <div class="diag-val">Storefront — Menu Board A</div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">Network</div>
+      <div class="diag-val">Network Name</div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">Serial Number</div>
+      <div class="diag-val">7SHJ437KJS</div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">Device ID</div>
+      <div class="diag-val">NET-A-C49E8N</div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">IP Address</div>
+      <div class="diag-val">192.168.1.84 <span class="dim">/ 18ms</span></div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">Status</div>
+      <div class="diag-val"><span class="ok">Idle</span> <span class="dim">— no active schedule</span></div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">Last Content</div>
+      <div class="diag-val">Breakfast Menu <span class="dim">— ended 14m ago</span></div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">Next Content</div>
+      <div class="diag-val">Lunch Menu <span class="dim">— 11:00 (in 2h 14m)</span></div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">Player</div>
+      <div class="diag-val">v1.4.2 <span class="dim">— uptime 12d 4h</span></div>
+    </div>
+    <div class="diag-row">
+      <div class="diag-key">Storage</div>
+      <div class="diag-val">2.4 GB <span class="dim">/ 32 GB · 7% used</span></div>
+    </div>
+
+    <div class="diag-actions">
+      <button class="diag-btn primary">Force resume</button>
+      <button class="diag-btn">Override now</button>
+      <button class="diag-btn">Refresh content</button>
+      <button class="diag-btn">Reboot</button>
+    </div>
+
+    <div class="diag-hint">Tap anywhere to close</div>
+  </div>
+</div>
+
+<script src="./quiet-state-bind.js"></script>
+<script>
+  // ============ Remote-code unlock ============
+  //
+  // OPERATOR PATH (production):
+  //   Point remote at screen. Press the 4-digit unlock code.
+  //   Default: 0-0-0-0. Configurable in CMS Settings.
+  //   While entering, four dots appear at the bottom and fill as keys are pressed.
+  //   Sequence resets after 4 seconds of inactivity.
+  //
+  // FALLBACK PATHS:
+  //   - Long-press top-right corner (touch / mouse) — for tablet preview
+  //   - Press 'D' on a keyboard — for desktop preview
+  //   - Press Escape — closes the overlay
+
+  const UNLOCK_CODE = '0000';   // In production: read from /api/setup/state → env.diagCode
+  const SEQ_TIMEOUT_MS = 4000;
+  const indicator = document.getElementById('remoteIndicator');
+  const dots = indicator.querySelectorAll('.remote-dot');
+  const diagOverlay = document.getElementById('diagOverlay');
+
+  let codeBuffer = '';
+  let seqTimer = null;
+
+  function resetSequence() {
+    codeBuffer = '';
+    dots.forEach(d => d.classList.remove('filled', 'error'));
+    indicator.classList.remove('show');
+    if (seqTimer) { clearTimeout(seqTimer); seqTimer = null; }
+  }
+
+  function flashError() {
+    dots.forEach(d => { d.classList.remove('filled'); d.classList.add('error'); });
+    setTimeout(resetSequence, 800);
+  }
+
+  function pushDigit(digit) {
+    if (codeBuffer.length >= UNLOCK_CODE.length) return;
+    indicator.classList.add('show');
+    codeBuffer += digit;
+    dots[codeBuffer.length - 1].classList.add('filled');
+
+    // Reset previous timer
+    if (seqTimer) clearTimeout(seqTimer);
+    seqTimer = setTimeout(resetSequence, SEQ_TIMEOUT_MS);
+
+    // Check on completion
+    if (codeBuffer.length === UNLOCK_CODE.length) {
+      if (codeBuffer === UNLOCK_CODE) {
+        clearTimeout(seqTimer);
+        setTimeout(() => {
+          diagOverlay.classList.add('show');
+          resetSequence();
+        }, 200);
+      } else {
+        flashError();
+      }
+    }
+  }
+
+  // ============ Keyboard handling (remote keypads send key events) ============
+  // Signage remotes' numeric keys typically map to standard key codes — both Tizen
+  // and BrightSign player surfaces expose them as digit keypress events.
+  document.addEventListener('keydown', (e) => {
+    // Numeric input for the secret code
+    if (/^[0-9]$/.test(e.key)) {
+      pushDigit(e.key);
+      return;
+    }
+    // Desktop preview shortcuts
+    if (e.key === 'd' || e.key === 'D') {
+      diagOverlay.classList.toggle('show');
+    }
+    if (e.key === 'Escape') {
+      diagOverlay.classList.remove('show');
+      resetSequence();
+    }
+  });
+
+  // ============ Long-press fallback (touch / mouse — for testing) ============
+  const diagTrigger = document.getElementById('diagTrigger');
+  let pressTimer = null;
+  function startPress() { pressTimer = setTimeout(() => diagOverlay.classList.add('show'), 800); }
+  function endPress() { clearTimeout(pressTimer); }
+  diagTrigger.addEventListener('mousedown', startPress);
+  diagTrigger.addEventListener('touchstart', startPress);
+  diagTrigger.addEventListener('mouseup', endPress);
+  diagTrigger.addEventListener('mouseleave', endPress);
+  diagTrigger.addEventListener('touchend', endPress);
+
+  // Click overlay to close
+  diagOverlay.addEventListener('click', () => {
+    diagOverlay.classList.remove('show');
+  });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,196 @@
+﻿<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>TomorrowOS Windows</title>
+    <!-- No external fonts: offline boot must not block on Google Fonts -->
+    <link rel='stylesheet' href="./style.css">
+  </head>
+  <body>
+    <div id="staticBootShell" class="static-boot-shell">
+      <div class="static-boot-title">TomorrowOS</div>
+      <div id="staticBootStatus" class="static-boot-status">Loading player...</div>
+    </div>
+    <div id="tomorrowBootBanner" class="tomorrow-boot-banner" aria-live="polite"></div>
+    <script>
+      (function () {
+        function showBootError(msg) {
+          var el = document.getElementById("tomorrowBootBanner");
+          if (!el) return;
+          el.textContent = String(msg || "Unknown error");
+          el.classList.add("is-visible");
+        }
+        window.__tomorrowShowBootError = showBootError;
+        window.addEventListener("error", function (ev) {
+          showBootError("JS error: " + (ev.message || "unknown"));
+        });
+        window.addEventListener("unhandledrejection", function (ev) {
+          var reason = ev.reason && (ev.reason.message || ev.reason);
+          showBootError("Promise error: " + (reason || "unknown"));
+        });
+      })();
+    </script>
+
+    <div class="ambient" id="introAmbient" style="display: none"></div>
+
+    <div class="intro-screen" id="introScreen" style="display: none">
+      <div class="hero-wrap">
+        <h1 class="hero-type" id="introHero">
+          <span class="letters" id="introHeroLetters"></span><span class="cursor"></span>
+        </h1>
+      </div>
+
+      <p class="tagline" id="introTagline">
+        The screens of <span class="em">tomorrow</span>.<br>
+        Open source, today.
+      </p>
+
+      <div class="orient-section" id="introOrientSection">
+        <div class="orient-label">Orientation</div>
+        <div class="orient-row">
+          <div class="orient-card" data-orient="landscape" tabindex="0">
+            <div class="orient-icon landscape"></div>
+            <div class="orient-info">
+              <div class="orient-name">Landscape</div>
+              <div class="orient-deg">0&deg;</div>
+            </div>
+          </div>
+          <div class="orient-card" data-orient="portrait-right" tabindex="0">
+            <div class="orient-icon portrait"></div>
+            <div class="orient-info">
+              <div class="orient-name">Portrait</div>
+              <div class="orient-deg">90&deg;</div>
+            </div>
+          </div>
+          <div class="orient-card" data-orient="portrait-left" tabindex="0">
+            <div class="orient-icon portrait"></div>
+            <div class="orient-info">
+              <div class="orient-name">Portrait</div>
+              <div class="orient-deg">270&deg;</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="next-section" id="introNextSection">
+        <button class="next-btn" id="introNextBtn" tabindex="0">
+          Continue
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="card cms-setup" id="cmsSetupScreen" style="display: none" tabindex="-1">
+      <h1>CMS connection</h1>
+      <p class="cms-setup-hint">
+        Example: <span class="mono">http://192.168.1.10:3000/</span>
+      </p>
+      <p class="cms-setup-hint cms-setup-remote-hint">
+        <strong>USB keyboard:</strong> type the URL directly; use <strong>Connect</strong> (or focus it with <strong>鈫?/strong>) to save.
+        <strong>Remote:</strong> <strong>Enter</strong> / arrows open the on-screen keyboard (works alongside USB typing).
+        <strong>DONE</strong> (or Back) closes the keyboard. <strong>鈫?/strong> on the URL field moves to <strong>Connect</strong>.
+      </p>
+      <input
+        type="text"
+        id="cmsEndpointInput"
+        class="cms-endpoint-input"
+        name="tomorrowos-cms-endpoint"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+        placeholder="http://host:port/"`n        tabindex="0"
+      />
+      <p id="cmsSetupError" class="cms-setup-error" tabindex="-1"></p>
+      <div id="cmsKeyboard" class="cms-keyboard" aria-label="On-screen keyboard"></div>
+      <div class="cms-setup-actions">
+        <button type="button" id="cmsEndpointSaveBtn" tabindex="0">Connect</button>
+      </div>
+    </div>
+
+    <div class="card" id="pairingArea" style="display: none">
+      <!-- <img id="brandLogo" class="brand-logo" /> -->
+      <h1 id="brandName">TomorrowOS</h1>
+      <p id="brandTagline"></p>
+
+      <div id="activationHeadline">Connect this screen</div>
+      <div id="activationInstructions"></div>
+    </div>
+
+    <div id="idleStateShell" class="idle-state-shell" style="display: none" aria-hidden="true">
+      <iframe
+        id="idleStateFrame"
+        class="idle-state-frame"
+        title="TomorrowOS idle screen"
+        tabindex="-1"
+      ></iframe>
+    </div>
+
+    <div class='contentPanel' id="contentPanel" style="display: none">
+       <div class='DownloadStatus' id="DownloadStatus">Initial</div>
+       <div id="contentArea" class='contentArea'></div>
+    </div>
+
+    <div
+      id="hiddenDeviceMenu"
+      class="hidden-device-menu"
+      style="display: none"
+      aria-hidden="true"
+    >
+      <div class="hidden-device-menu-panel" role="dialog" aria-labelledby="hiddenDeviceMenuTitle">
+        <h1 id="hiddenDeviceMenuTitle" class="hidden-device-menu-title">Device information</h1>
+        <div id="hiddenDeviceMenuList" class="hidden-device-menu-list"></div>
+        <p class="hidden-device-menu-hint">
+          Press <strong>Return</strong> on the remote to exit this menu.
+        </p>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        function setStatus(msg) {
+          var el = document.getElementById("staticBootStatus");
+          if (el) el.textContent = String(msg || "");
+        }
+
+        function showBootLoadError(fileName) {
+          var message = "Boot failed: Could not load " + fileName + ". Check the installed player files.";
+          setStatus(message);
+          if (typeof window.__tomorrowShowBootError === "function") {
+            window.__tomorrowShowBootError(message);
+          }
+        }
+
+        setStatus("Loading Windows platform...");
+        window.__tomorrowBootScriptError = showBootLoadError;
+      })();
+    </script>
+    <script src="./platform-windows.js" onerror="window.__tomorrowBootScriptError && window.__tomorrowBootScriptError('platform-windows.js')"></script>
+    <script>
+      (function () {
+        var el = document.getElementById("staticBootStatus");
+        if (el) el.textContent = "Loading config...";
+      })();
+    </script>
+    <script src="./config.js" onerror="window.__tomorrowBootScriptError && window.__tomorrowBootScriptError('config.js')"></script>
+    <script>
+      (function () {
+        if (!window.TOMORROWOS_CONFIG) {
+          var message = "Boot failed: config.js loaded but TOMORROWOS_CONFIG was not defined.";
+          var el = document.getElementById("staticBootStatus");
+          if (el) el.textContent = message;
+          if (typeof window.__tomorrowShowBootError === "function") {
+            window.__tomorrowShowBootError(message);
+          }
+          return;
+        }
+        var status = document.getElementById("staticBootStatus");
+        if (status) status.textContent = "Loading app...";
+      })();
+    </script>
+    <script src="./main.js" onerror="window.__tomorrowBootScriptError && window.__tomorrowBootScriptError('main.js')"></script>
+  </body>
+</html>
+
+

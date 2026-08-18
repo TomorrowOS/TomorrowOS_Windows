@@ -1,0 +1,10 @@
+{
+  "name": "tomorrowos-windows",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ./cli/build.js",
+    "build:host": "dotnet build ./host/TomorrowOS.slnx -c Release"
+  }
+}

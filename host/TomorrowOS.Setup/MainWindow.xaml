@@ -1,0 +1,17 @@
+﻿<Window x:Class="TomorrowOS.Setup.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Install TomorrowOS Windows Player"
+        Width="940"
+        Height="700"
+        MinWidth="860"
+        MinHeight="620"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        ResizeMode="CanResizeWithGrip"
+        Background="#FFFFFF"
+        BorderBrush="#D6D6D6"
+        BorderThickness="1">
+  <wv2:WebView2 x:Name="WebView" />
+</Window>

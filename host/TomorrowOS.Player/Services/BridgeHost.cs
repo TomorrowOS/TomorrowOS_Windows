@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.Http;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 
@@ -22,6 +23,7 @@ internal sealed class BridgeHost
     private readonly ScreenshotService _screenshots = new();
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(8) };
     private bool _displayMuted;
+    private DispatcherTimer? _heartbeatTimer;
 
     public const string AppHost = "tomorrowos.app";
     public const string CacheHost = "tomorrowos.cache";
@@ -36,6 +38,7 @@ internal sealed class BridgeHost
     public async Task InitializeAsync()
     {
         AppPaths.EnsureDirectories();
+        WriteHeartbeat();
 
         var env = await CoreWebView2Environment.CreateAsync(
             userDataFolder: Path.Combine(AppPaths.ProgramDataRoot, "webview2"));
@@ -68,6 +71,10 @@ internal sealed class BridgeHost
         };
 
         core.Navigate($"https://{AppHost}/index.html");
+
+        _heartbeatTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _heartbeatTimer.Tick += (_, _) => WriteHeartbeat();
+        _heartbeatTimer.Start();
     }
 
     private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)

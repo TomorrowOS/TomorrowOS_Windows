@@ -14,12 +14,16 @@ public partial class MainWindow : Window
 {
     private readonly BridgeHost _bridge;
     private readonly DispatcherTimer _focusTimer;
-    private bool _maintenanceMode;
+    private bool _maintenancePromptOpen;
     private bool _allowClose;
     private bool _displayQuiet;
+    private bool _restorePlayerTopmost;
+    private PasscodeDialog? _passcodeDialog;
+    private DateTime _lastMaintenanceRequestUtc = DateTime.MinValue;
 
     // Avoid F12 combos — many OEM / Windows utilities bind those to Calculator.
     private const string HotkeyChordHint = "Ctrl+Shift+Alt+M";
+    private static readonly TimeSpan MaintenanceDebounce = TimeSpan.FromMilliseconds(100);
 
     private const uint SwpNozorder = 0x0004;
     private const uint SwpShowwindow = 0x0040;
@@ -37,6 +41,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        TouchHeartbeatFile();
+
         try
         {
             if (File.Exists(AppPaths.StopFlagFile))
@@ -61,7 +67,7 @@ public partial class MainWindow : Window
         _focusTimer.Tick += (_, _) =>
         {
             // Never Activate during quiet — that wakes the monitor and caused instability.
-            if (_maintenanceMode || _allowClose || _displayQuiet) return;
+            if (_maintenancePromptOpen || _allowClose || _displayQuiet) return;
             if (!IsActive)
             {
                 Activate();
@@ -72,7 +78,7 @@ public partial class MainWindow : Window
 
         MouseMove += (_, _) =>
         {
-            if (_maintenanceMode) return;
+            if (_maintenancePromptOpen) return;
             // Keep forcing hide — WebView2 can restore its own cursor on move.
             SetCursorVisible(false);
         };
@@ -88,7 +94,7 @@ public partial class MainWindow : Window
                 {
                     WebView.CoreWebView2.NavigationCompleted += (_, args) =>
                     {
-                        if (args.IsSuccess && !_maintenanceMode)
+                        if (args.IsSuccess && !_maintenancePromptOpen)
                         {
                             SetCursorVisible(false);
                         }
@@ -219,14 +225,7 @@ public partial class MainWindow : Window
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
-        if (IsMaintenanceChord(e.Key))
-        {
-            e.Handled = true;
-            RequestMaintenancePrompt();
-            return;
-        }
-
-        if (!_maintenanceMode && (e.Key == Key.System || e.SystemKey == Key.F4))
+        if (!_maintenancePromptOpen && (e.Key == Key.System || e.SystemKey == Key.F4))
         {
             e.Handled = true;
         }
@@ -257,18 +256,64 @@ public partial class MainWindow : Window
 
     public void RequestMaintenancePrompt()
     {
-        if (_maintenanceMode)
+        if (_maintenancePromptOpen || _allowClose)
         {
             return;
         }
 
+        var now = DateTime.UtcNow;
+        if (now - _lastMaintenanceRequestUtc < MaintenanceDebounce)
+        {
+            return;
+        }
+
+        _lastMaintenanceRequestUtc = now;
         PromptMaintenance();
     }
 
     private void PromptMaintenance()
     {
-        // Lab / V1: hotkey alone is enough to enter maintenance (no passcode gate).
-        EnterMaintenanceMode();
+        _maintenancePromptOpen = true;
+        _restorePlayerTopmost = Topmost;
+        // Drop player below the maintenance gate; hardened Topmost otherwise covers it.
+        Topmost = false;
+        SetCursorVisible(true);
+
+        _passcodeDialog = PasscodeDialog.ShowFloating(ValidatePasscode);
+        _passcodeDialog.Unlocked += OnMaintenanceUnlocked;
+        _passcodeDialog.Cancelled += OnMaintenanceCancelled;
+        _passcodeDialog.Closed += OnPasscodeDialogClosed;
+    }
+
+    private void OnMaintenanceUnlocked()
+    {
+        ExitAfterMaintenanceUnlock();
+    }
+
+    private void OnMaintenanceCancelled()
+    {
+        if (!_allowClose)
+        {
+            SetCursorVisible(false);
+        }
+    }
+
+    private void OnPasscodeDialogClosed(object? sender, EventArgs e)
+    {
+        if (_passcodeDialog != null)
+        {
+            _passcodeDialog.Unlocked -= OnMaintenanceUnlocked;
+            _passcodeDialog.Cancelled -= OnMaintenanceCancelled;
+            _passcodeDialog.Closed -= OnPasscodeDialogClosed;
+            _passcodeDialog = null;
+        }
+
+        _maintenancePromptOpen = false;
+
+        if (!_allowClose && _restorePlayerTopmost)
+        {
+            Topmost = true;
+        }
     }
 
     private static bool ValidatePasscode(string pass)
@@ -304,55 +349,11 @@ public partial class MainWindow : Window
         return Convert.ToHexString(bytes);
     }
 
-    private void EnterMaintenanceMode()
+    private void ExitAfterMaintenanceUnlock()
     {
-        _maintenanceMode = true;
-        Topmost = false;
-        ShowInTaskbar = true;
-        MaintenanceBanner.Visibility = Visibility.Visible;
-        SetCursorVisible(true);
         try
         {
-            File.WriteAllText(AppPaths.MaintenanceFlagFile, DateTime.UtcNow.ToString("O"));
-        }
-        catch
-        {
-            // ignore
-        }
-
-        // Custom dialog so title-bar X means continue (same as No), not an ambiguous Cancel.
-        if (ExitConfirmDialog.ConfirmExit())
-        {
-            try
-            {
-                File.WriteAllText(AppPaths.StopFlagFile, DateTime.UtcNow.ToString("O"));
-                if (File.Exists(AppPaths.MaintenanceFlagFile))
-                {
-                    File.Delete(AppPaths.MaintenanceFlagFile);
-                }
-            }
-            catch
-            {
-                // ignore
-            }
-
-            _allowClose = true;
-            Close();
-            return;
-        }
-
-        ExitMaintenanceMode();
-    }
-
-    private void ExitMaintenanceMode()
-    {
-        _maintenanceMode = false;
-        Topmost = true;
-        ShowInTaskbar = false;
-        MaintenanceBanner.Visibility = Visibility.Collapsed;
-        SetCursorVisible(false);
-        try
-        {
+            File.WriteAllText(AppPaths.StopFlagFile, DateTime.UtcNow.ToString("O"));
             if (File.Exists(AppPaths.MaintenanceFlagFile))
             {
                 File.Delete(AppPaths.MaintenanceFlagFile);
@@ -363,12 +364,12 @@ public partial class MainWindow : Window
             // ignore
         }
 
-        Activate();
-        WindowState = WindowState.Maximized;
+        _allowClose = true;
+        Close();
     }
 
     /// <summary>
-    /// Hide cursor during playback; show only in maintenance (Ctrl+Shift+Alt+M).
+    /// Hide cursor during playback; show only during maintenance unlock (Ctrl+Shift+Alt+M).
     /// Must also set CSS inside WebView2 — WPF OverrideCursor does not cover the HWND.
     /// </summary>
     private void SetCursorVisible(bool visible)
@@ -419,9 +420,22 @@ public partial class MainWindow : Window
         }
     }
 
+    private static void TouchHeartbeatFile()
+    {
+        try
+        {
+            AppPaths.EnsureDirectories();
+            File.WriteAllText(AppPaths.HeartbeatFile, DateTime.UtcNow.ToString("O"));
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        if (!_allowClose && !_maintenanceMode)
+        if (!_allowClose)
         {
             e.Cancel = true;
         }

@@ -12,6 +12,13 @@ internal static class Program
     private static readonly string StopFlag = Path.Combine(ProgramDataRoot, "player.stop");
     private static readonly string MutexName = "Global\\TomorrowOS.Watchdog";
 
+    private static DateTime _lastPlayerStartUtc = DateTime.MinValue;
+
+    private static readonly TimeSpan CheckEvery = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan HeartbeatStaleAfter = TimeSpan.FromSeconds(25);
+    // Brief grace only after we start the player — not 45s (that caused ~45s visible delay).
+    private static readonly TimeSpan StartupGraceAfterPlayerStart = TimeSpan.FromSeconds(10);
+
     private static string PlayerExe =>
         Path.Combine(AppContext.BaseDirectory, "TomorrowOS.Player.exe");
 
@@ -26,9 +33,6 @@ internal static class Program
             return;
         }
 
-        var staleSeconds = 20;
-        var checkEvery = TimeSpan.FromSeconds(5);
-
         EnsurePlayerRunning("startup");
 
         while (true)
@@ -37,7 +41,7 @@ internal static class Program
             {
                 if (File.Exists(MaintenanceFlag) || File.Exists(StopFlag))
                 {
-                    Thread.Sleep(checkEvery);
+                    Thread.Sleep(CheckEvery);
                     continue;
                 }
 
@@ -46,9 +50,13 @@ internal static class Program
                     return;
                 }
 
-                if (!IsPlayerAlive() || IsHeartbeatStale(staleSeconds))
+                if (!IsPlayerAlive())
                 {
-                    RestartPlayer("heartbeat-or-process");
+                    StartPlayer("process-missing");
+                }
+                else if (IsHeartbeatStale())
+                {
+                    RestartPlayer("heartbeat-stale");
                 }
             }
             catch (Exception ex)
@@ -56,7 +64,7 @@ internal static class Program
                 TryLog(ex.ToString());
             }
 
-            Thread.Sleep(checkEvery);
+            Thread.Sleep(CheckEvery);
         }
     }
 
@@ -65,8 +73,23 @@ internal static class Program
         return Process.GetProcessesByName("TomorrowOS.Player").Length > 0;
     }
 
-    private static bool IsHeartbeatStale(int staleSeconds)
+    private static bool InStartupGraceAfterPlayerStart()
     {
+        if (_lastPlayerStartUtc == DateTime.MinValue)
+        {
+            return false;
+        }
+
+        return (DateTime.UtcNow - _lastPlayerStartUtc) < StartupGraceAfterPlayerStart;
+    }
+
+    private static bool IsHeartbeatStale()
+    {
+        if (InStartupGraceAfterPlayerStart())
+        {
+            return false;
+        }
+
         if (!File.Exists(HeartbeatFile))
         {
             return true;
@@ -80,7 +103,7 @@ internal static class Program
                 return true;
             }
 
-            return (DateTime.UtcNow - ts.ToUniversalTime()).TotalSeconds > staleSeconds;
+            return (DateTime.UtcNow - ts.ToUniversalTime()) > HeartbeatStaleAfter;
         }
         catch
         {
@@ -97,8 +120,28 @@ internal static class Program
 
         if (!IsPlayerAlive())
         {
-            RestartPlayer(reason);
+            StartPlayer(reason);
         }
+    }
+
+    private static void StartPlayer(string reason)
+    {
+        if (!File.Exists(PlayerExe))
+        {
+            TryLog("Player exe missing: " + PlayerExe);
+            return;
+        }
+
+        TryLog($"Starting player ({reason})");
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = PlayerExe,
+            WorkingDirectory = AppContext.BaseDirectory,
+            UseShellExecute = true
+        });
+
+        _lastPlayerStartUtc = DateTime.UtcNow;
+        TouchHeartbeat();
     }
 
     private static void RestartPlayer(string reason)
@@ -118,26 +161,23 @@ internal static class Program
             }
         }
 
-        if (!File.Exists(PlayerExe))
+        StartPlayer(reason);
+    }
+
+    private static void TouchHeartbeat()
+    {
+        try
         {
-            TryLog("Player exe missing: " + PlayerExe);
-            return;
+            File.WriteAllText(HeartbeatFile, DateTime.UtcNow.ToString("O"));
         }
-
-        Process.Start(new ProcessStartInfo
+        catch
         {
-            FileName = PlayerExe,
-            WorkingDirectory = AppContext.BaseDirectory,
-            UseShellExecute = true
-        });
-
-        // Give the new process time to write a heartbeat.
-        Thread.Sleep(3000);
+            // ignore
+        }
     }
 
     private static bool IsShuttingDown()
     {
-        // Simple heuristic: if user initiated logoff/shutdown, avoid fighting it.
         return Environment.HasShutdownStarted;
     }
 

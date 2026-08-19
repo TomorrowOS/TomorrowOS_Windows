@@ -332,26 +332,6 @@ try {
     }
   };
 
-  // Backup exit path: WebView may eat keys before WPF sees them.
-  // Use Ctrl+Shift+Alt+M — F12 combos often open Calculator on Windows OEM builds.
-  document.addEventListener(
-    "keydown",
-    (ev) => {
-      const key = String(ev.key || "").toLowerCase();
-      if (
-        key === "m" &&
-        ev.ctrlKey &&
-        ev.shiftKey &&
-        ev.altKey
-      ) {
-        ev.preventDefault();
-        ev.stopPropagation();
-        void invoke("app.requestMaintenance", {});
-      }
-    },
-    true
-  );
-
   // Warm device info + storage roots before main.js boots heavily.
   (async function bootstrapHost() {
     if (!hasHostBridge()) {
@@ -377,6 +357,7 @@ try {
       });
 
       // Keep watchdog happy while the player is alive.
+      window.TomorrowPlatform.heartbeat();
       setInterval(() => {
         try {
           window.TomorrowPlatform.heartbeat();

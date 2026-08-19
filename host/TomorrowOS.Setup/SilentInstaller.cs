@@ -43,6 +43,7 @@ internal static class SilentInstaller
 
         InstallService.InstallCore(req);
         InstallService.ClearRuntimeFlags();
+        InstallService.LaunchPlayer(req.InstallDir, forceRestart: true);
         if (req.StartWatchdog)
         {
             InstallService.LaunchWatchdog(req.InstallDir);

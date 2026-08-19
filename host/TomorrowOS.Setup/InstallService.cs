@@ -161,6 +161,70 @@ internal static class InstallService
         });
     }
 
+    public static void LaunchPlayer(string installDir, bool forceRestart = false)
+    {
+        var playerExe = Path.Combine(installDir, "TomorrowOS.Player.exe");
+        if (!File.Exists(playerExe))
+        {
+            return;
+        }
+
+        if (forceRestart)
+        {
+            StopPlayerProcesses();
+            Thread.Sleep(400);
+        }
+        else if (Process.GetProcessesByName("TomorrowOS.Player").Length > 0)
+        {
+            TouchHeartbeat();
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = playerExe,
+            WorkingDirectory = installDir,
+            UseShellExecute = true,
+            WindowStyle = ProcessWindowStyle.Normal
+        });
+
+        TouchHeartbeat();
+    }
+
+    private static void StopPlayerProcesses()
+    {
+        foreach (var process in Process.GetProcessesByName("TomorrowOS.Player"))
+        {
+            try
+            {
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(3000);
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+    }
+
+    private static void TouchHeartbeat()
+    {
+        try
+        {
+            var root = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "TomorrowOS");
+            Directory.CreateDirectory(root);
+            File.WriteAllText(
+                Path.Combine(root, "player.heartbeat"),
+                DateTime.UtcNow.ToString("O"));
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
     /// <summary>
     /// Copies binaries and applies local settings. CMS endpoint may be filled later.
     /// </summary>
@@ -207,11 +271,10 @@ internal static class InstallService
 
     public static void FinalizeAndLaunch(InstallRequest req)
     {
+        ClearRuntimeFlags();
         WriteConfig(req.InstallDir, req.CmsEndpoint, req.Orientation, req.DisplayIndex, req.ContentFit);
         WriteSettings(req);
-        // Stale flags from a previous maintenance/exit session would leave Watchdog
-        // running but never starting the Player.
-        ClearRuntimeFlags();
+        LaunchPlayer(req.InstallDir, forceRestart: true);
         if (req.StartWatchdog)
         {
             LaunchWatchdog(req.InstallDir);

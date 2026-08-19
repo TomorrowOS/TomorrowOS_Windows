@@ -69,6 +69,19 @@ public partial class MainWindow : Window
         core.Settings.AreDevToolsEnabled = false;
 
         var www = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+        var installerHtml = Path.Combine(www, "installer.html");
+        if (!File.Exists(installerHtml))
+        {
+            throw new FileNotFoundException(
+                "Installer UI not found next to this executable.\n\n" +
+                "Use the full package:\n" +
+                "  build\\windows\\setup\\TomorrowOS-Windows-Setup.exe\n" +
+                "or the launcher:\n" +
+                "  build\\windows\\TomorrowOS-Windows-Setup.lnk\n\n" +
+                "A lone Setup.exe copy at the build root cannot run — it is missing wwwroot, payload, and runtime files.\n\n" +
+                "Looked for:\n" + installerHtml);
+        }
+
         core.SetVirtualHostNameToFolderMapping(
             "tomorrowos.setup",
             www,
@@ -161,7 +174,9 @@ public partial class MainWindow : Window
             case "host.finalize":
             {
                 ApplyFinalizeParams(paramsEl, _pending);
-                await Task.Run(() => InstallService.FinalizeAndLaunch(_pending));
+                InstallService.FinalizeAndLaunch(_pending);
+                // Close the installer immediately so the player window is visible right away.
+                _ = Dispatcher.BeginInvoke(Close);
                 return true;
             }
 

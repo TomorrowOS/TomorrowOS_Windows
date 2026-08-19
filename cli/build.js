@@ -122,10 +122,56 @@ copyDir(hardeningSrc, path.join(PAYLOAD, "hardening"));
 copyDir(PAYLOAD, path.join(setupOut, "payload"));
 copyDir(hardeningSrc, path.join(setupOut, "hardening"));
 
-const setupExe = path.join(setupOut, "TomorrowOS-Windows-Setup.exe");
-if (fs.existsSync(setupExe)) {
-  // Keep a convenience copy at the build root (run from setup/ for full deps + UI).
-  fs.copyFileSync(setupExe, path.join(OUT, "TomorrowOS-Windows-Setup.exe"));
+// Never copy a bare Setup.exe to the build root — it is missing wwwroot, payload,
+// and the self-contained runtime next to it, so double-click appears to "do nothing".
+const rootOrphanExe = path.join(OUT, "TomorrowOS-Windows-Setup.exe");
+try {
+  if (fs.existsSync(rootOrphanExe)) {
+    fs.unlinkSync(rootOrphanExe);
+  }
+} catch (err) {
+  console.warn(`Could not remove orphan root Setup.exe: ${err.message}`);
+}
+
+// Convenience launcher at build/windows so opening from the build root still works.
+const setupLauncher = path.join(OUT, "TomorrowOS-Windows-Setup.cmd");
+fs.writeFileSync(
+  setupLauncher,
+  [
+    "@echo off",
+    "setlocal",
+    'cd /d "%~dp0setup"',
+    'if not exist "TomorrowOS-Windows-Setup.exe" (',
+    "  echo TomorrowOS Setup was not found in the setup folder.",
+    "  echo Run npm run build first.",
+    "  pause",
+    "  exit /b 1",
+    ")",
+    'start "" "TomorrowOS-Windows-Setup.exe" %*',
+    ""
+  ].join("\r\n"),
+  "utf8"
+);
+
+// Windows shortcut (.lnk) also points at the full package (icon + double-click).
+try {
+  const ps = [
+    `$out = '${OUT.replace(/'/g, "''")}'`,
+    `$target = Join-Path $out 'setup\\TomorrowOS-Windows-Setup.exe'`,
+    `$lnkPath = Join-Path $out 'TomorrowOS-Windows-Setup.lnk'`,
+    `$w = New-Object -ComObject WScript.Shell`,
+    `$s = $w.CreateShortcut($lnkPath)`,
+    `$s.TargetPath = $target`,
+    `$s.WorkingDirectory = (Join-Path $out 'setup')`,
+    `$s.Description = 'Install TomorrowOS Windows Player'`,
+    `$s.Save()`
+  ].join("; ");
+  spawnSync("powershell.exe", ["-NoProfile", "-Command", ps], {
+    stdio: "ignore",
+    shell: false
+  });
+} catch (err) {
+  console.warn(`Could not create Setup shortcut: ${err.message}`);
 }
 
 // Sanity check: Player WPF assembly must remain the full build, not a stub.
@@ -147,7 +193,8 @@ if (!fs.existsSync(installerUi)) {
 console.log(`Build complete: ${OUT}`);
 console.log(`WindowsBase.dll: ${(wbSize / 1024).toFixed(0)} KB`);
 console.log("Interactive: build/windows/setup/TomorrowOS-Windows-Setup.exe");
+console.log("From build root: TomorrowOS-Windows-Setup.lnk (or .cmd)");
 console.log("Run player: build/windows/payload/TomorrowOS.Player.exe");
 console.log(
-  'Silent: TomorrowOS-Windows-Setup.exe /silent /cms "https://cms" /passcode "secret" /orientation landscape'
+  'Silent: build\\windows\\setup\\TomorrowOS-Windows-Setup.exe /silent /cms "https://cms" /passcode "secret" /orientation landscape'
 );

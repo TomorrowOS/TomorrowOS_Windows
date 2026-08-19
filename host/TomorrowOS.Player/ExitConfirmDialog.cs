@@ -75,9 +75,14 @@ internal sealed class ExitConfirmDialog : Window
     }
 
     /// <returns>true when the user chose Yes (exit).</returns>
-    public static bool ConfirmExit()
+    public static bool ConfirmExit(Window? owner = null)
     {
         var dialog = new ExitConfirmDialog();
+        if (owner != null)
+        {
+            dialog.Owner = owner;
+        }
+
         return dialog.ShowDialog() == true;
     }
 }

@@ -40,7 +40,17 @@ body {
 }
 button, input, select, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid #2f6df6; outline-offset: 2px; border-radius: 3px; }
-.vh { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.vh {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
 
 .shell { height: 100%; display: flex; flex-direction: column; }
 .win__bar {
@@ -96,7 +106,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .steplist li.is-done .dot { background: var(--ink); border-color: var(--ink); color: var(--paper); }
 .steplist li.is-current { color: var(--ink); font-weight: 600; }
 .steplist li.is-current .dot { border-color: var(--ink); border-width: 2px; }
-.inst__main { padding: 30px 34px; overflow: auto; }
+.inst__main { padding: 30px 34px; overflow: auto; overflow-anchor: none; }
 .inst__main h2 { margin: 0 0 6px; font-size: 20px; letter-spacing: -.015em; }
 .inst__main .lede { margin: 0 0 22px; color: var(--ink-2); font-size: 13.5px; max-width: 62ch; }
 .inst__main h3 { font-size: 13px; margin: 0 0 8px; }
@@ -139,30 +149,80 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .choice__t { font-size: 13.5px; font-weight: 600; }
 .choice__d { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
 
-.togglelist { border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+.togglelist { border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; overflow-anchor: none; }
 .togglerow {
   display: grid; grid-template-columns: 1fr auto; gap: 14px;
   padding: 12px 16px; align-items: center; background: var(--white);
+  overflow-anchor: none;
 }
 .togglerow + .togglerow { border-top: 1px solid var(--line); }
 .togglerow__t { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .togglerow__d { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; max-width: 66ch; }
 .togglerow.is-off-critical { background: var(--warn-bg); }
-.switch { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; }
-.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+/*
+  Root cause of the jump/blank: the checkbox was position:absolute with width/height 0
+  and NO positioned ancestor. WebView2 then scrolled to a bogus focus rect near the
+  top of the scrollport when focusing lower toggles, shoving content up and leaving
+  empty space below. Contain the hit-target inside .switch.
+*/
+.switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  user-select: none;
+  min-height: 22px;
+}
+.switch input {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 42px;
+  height: 22px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+}
 .switch__track {
-  width: 42px; height: 22px; border-radius: 11px; background: var(--white);
-  border: 1px solid var(--ink-2); position: relative; transition: background .15s, border-color .15s;
+  width: 42px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--white);
+  border: 1px solid var(--ink-2);
+  position: relative;
+  transition: background .15s, border-color .15s;
   flex: 0 0 auto;
+  pointer-events: none;
 }
 .switch__track::after {
-  content: ""; position: absolute; left: 4px; top: 4px;
-  width: 12px; height: 12px; border-radius: 50%; background: var(--ink-2);
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ink-2);
   transition: transform .15s, background .15s;
 }
-.switch input:checked + .switch__track { background: var(--ink); border-color: var(--ink); }
-.switch input:checked + .switch__track::after { transform: translateX(20px); background: var(--paper); }
-.switch__state { font-size: 12px; color: var(--ink-2); min-width: 24px; }
+.switch input:checked + .switch__track {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.switch input:checked + .switch__track::after {
+  transform: translateX(20px);
+  background: var(--paper);
+}
+.switch__state {
+  font-size: 12px;
+  color: var(--ink-2);
+  width: 28px;
+  flex: 0 0 28px;
+  text-align: left;
+}
 
 .pill {
   display: inline-block; font-family: var(--mono); font-size: 10px;
@@ -334,8 +394,8 @@ code { font-family: var(--mono); font-size: 12px; }
         <div class="instpane" id="pane-hardening" hidden>
           <h2>Prepare Windows for signage</h2>
           <p class="lede">TomorrowOS will apply the following system changes. Recommended items are on by default. Turning off an essential item leaves the screen able to show Windows to the public.</p>
-          <div class="togglelist" id="hardening-list"></div>
           <div class="note note--warn" id="hardening-warn" hidden></div>
+          <div class="togglelist" id="hardening-list"></div>
           <div class="note">
             <strong>Windows updates stay enabled.</strong> Security updates remain on and will be scheduled outside playback hours, inside the maintenance window you choose.
           </div>
@@ -515,13 +575,13 @@ code { font-family: var(--mono); font-size: 12px; }
 </div>
 <script>
 const SETUP_TYPES = [
-  { id: 'standard', t: 'Standard installation', d: 'One device, configured here and paired to a CMS. Best for a single screen or a small site.' },
-  { id: 'fleet', t: 'Managed fleet installation', d: 'Use silent flags so imaging tools and RMM can roll out many identical devices.' },
-  { id: 'dev', t: 'Developer / test installation', d: 'Leaves Windows unhardened and keeps developer logging on. Not for production screens.' }
+  { id: 'standard', t: 'Standard installation', d: ' One device, configured here and paired to a CMS. Best for a single screen or a small site.' },
+  { id: 'fleet', t: 'Managed fleet installation', d: ' Use silent flags so imaging tools and RMM can roll out many identical devices.' },
+  { id: 'dev', t: 'Developer / test installation', d: ' Leaves Windows unhardened and keeps developer logging on. Not for production screens.' }
 ];
 const ROLES = [
-  { id: 'dedicated', t: 'Dedicated signage player', d: 'This device does nothing except play content. Windows stays behind the player at all times.' },
-  { id: 'shared', t: 'Shared Windows device for testing only', d: 'The player runs in a normal window. Windows stays usable. No hardening is applied.' }
+  { id: 'dedicated', t: 'Dedicated signage player', d: ' This device does nothing except play content. Windows stays behind the player at all times.' },
+  { id: 'shared', t: 'Shared Windows device for testing only', d: ' The player runs in a normal window. Windows stays usable. No hardening is applied.' }
 ];
 const HARDENING = [
   { id: 'autostart', t: 'Start TomorrowOS automatically after login', d: 'Registers startup so playback resumes without anyone signing in at the device.', critical: true },
@@ -538,14 +598,14 @@ const HARDENING = [
   { id: 'fallback', t: 'Create fallback screen for recovery', d: 'Shows a branded local screen while playback is restoring.', critical: true }
 ];
 const ORIENTS = [
-  { id: 'landscape', t: 'Landscape', d: 'No rotation applied.' },
-  { id: 'portrait-left', t: 'Portrait left', d: 'Rotates output 90° anticlockwise.' },
-  { id: 'portrait-right', t: 'Portrait right', d: 'Rotates output 90° clockwise.' }
+  { id: 'landscape', t: 'Landscape', d: ' No rotation applied.' },
+  { id: 'portrait-left', t: 'Portrait left', d: ' Rotates output 90° anticlockwise.' },
+  { id: 'portrait-right', t: 'Portrait right', d: ' Rotates output 90° clockwise.' }
 ];
 const FITS = [
-  { id: 'contain', t: 'Contain', d: 'Whole asset visible. Unused edges filled with the fallback colour.' },
-  { id: 'cover', t: 'Cover', d: 'Fills the screen. Edges of the asset may be cropped.' },
-  { id: 'stretch', t: 'Stretch', d: 'Fills the screen and ignores aspect ratio.' }
+  { id: 'contain', t: 'Contain', d: ' Whole asset visible. Unused edges filled with the fallback colour.' },
+  { id: 'cover', t: 'Cover', d: ' Fills the screen. Edges of the asset may be cropped.' },
+  { id: 'stretch', t: 'Stretch', d: ' Fills the screen and ignores aspect ratio.' }
 ];
 const INST_STEPS = [
   { id: 'welcome', label: 'Welcome' },
@@ -658,34 +718,80 @@ function renderPasscodeRules() {
   validate();
 }
 
-function renderHardening() {
-  $('#hardening-list').innerHTML = HARDENING.map(h => {
-    const on = S.hardening[h.id];
-    const bad = h.critical && !on;
-    return `<div class="togglerow ${bad ? 'is-off-critical' : ''}">
-      <div>
-        <div class="togglerow__t">${esc(h.t)}${h.critical ? ' <span class="pill">Recommended</span>' : ''}</div>
-        <div class="togglerow__d">${esc(h.d)}</div>
-      </div>
-      <label class="switch">
-        <span class="vh">${esc(h.t)}</span>
-        <input type="checkbox" data-harden="${h.id}" ${on ? 'checked' : ''}>
-        <span class="switch__track" aria-hidden="true"></span>
-        <span class="switch__state">${on ? 'On' : 'Off'}</span>
-      </label>
-    </div>`;
-  }).join('');
-  $$('[data-harden]').forEach(i => i.addEventListener('change', () => {
-    S.hardening[i.dataset.harden] = i.checked;
-    renderHardening();
-  }));
+function withMainScrollPinned(fn) {
+  const main = $('#inst-main');
+  const top = main ? main.scrollTop : 0;
+  fn();
+  if (!main) return;
+  main.scrollTop = top;
+  requestAnimationFrame(() => { main.scrollTop = top; });
+}
+
+function syncHardeningWarn() {
   const off = criticalOff();
   const warn = $('#hardening-warn');
-  warn.hidden = off.length === 0;
-  if (off.length) {
-    warn.innerHTML = `<strong>${off.length} recommended protection${off.length > 1 ? 's are' : ' is'} turned off.</strong> With ${esc(off.map(h => h.t.toLowerCase()).join(', '))} disabled, Windows can appear over content on a public screen.`;
+  if (off.length === 0) {
+    warn.hidden = true;
+    warn.textContent = '';
+    return;
   }
-  validate();
+  warn.hidden = false;
+  warn.innerHTML = `<strong>${off.length} recommended protection${off.length > 1 ? 's are' : ' is'} turned off.</strong> With ${esc(off.map(h => h.t.toLowerCase()).join(', '))} disabled, Windows can appear over content on a public screen.`;
+}
+
+function syncHardeningRow(row, id) {
+  const h = HARDENING.find(x => x.id === id);
+  if (!h || !row) return;
+  const on = !!S.hardening[id];
+  const input = row.querySelector('[data-harden]');
+  const state = row.querySelector('.switch__state');
+  if (input) input.checked = on;
+  if (state) state.textContent = on ? 'On' : 'Off';
+  row.classList.toggle('is-off-critical', !!(h.critical && !on));
+}
+
+function renderHardening() {
+  const list = $('#hardening-list');
+  const needsBuild = !list.dataset.built || list.children.length !== HARDENING.length;
+
+  withMainScrollPinned(() => {
+    if (needsBuild) {
+      list.innerHTML = HARDENING.map(h => {
+        const on = S.hardening[h.id];
+        const bad = h.critical && !on;
+        return `<div class="togglerow ${bad ? 'is-off-critical' : ''}" data-harden-row="${h.id}">
+          <div>
+            <div class="togglerow__t">${esc(h.t)}${h.critical ? ' <span class="pill">Recommended</span>' : ''}</div>
+            <div class="togglerow__d">${esc(h.d)}</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" data-harden="${h.id}" ${on ? 'checked' : ''} aria-label="${esc(h.t)}">
+            <span class="switch__track" aria-hidden="true"></span>
+            <span class="switch__state">${on ? 'On' : 'Off'}</span>
+          </label>
+        </div>`;
+      }).join('');
+      list.dataset.built = '1';
+      $$('[data-harden]', list).forEach(i => {
+        i.addEventListener('change', () => {
+          const id = i.dataset.harden;
+          S.hardening[id] = i.checked;
+          withMainScrollPinned(() => {
+            syncHardeningRow(i.closest('[data-harden-row]'), id);
+            syncHardeningWarn();
+            validate();
+          });
+        });
+      });
+    } else {
+      HARDENING.forEach(h => {
+        syncHardeningRow(list.querySelector(`[data-harden-row="${h.id}"]`), h.id);
+      });
+    }
+
+    syncHardeningWarn();
+    validate();
+  });
 }
 
 function renderOptions() {

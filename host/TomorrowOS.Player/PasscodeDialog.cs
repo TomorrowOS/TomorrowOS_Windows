@@ -26,7 +26,7 @@ internal sealed class PasscodeDialog : Window
 
         Title = "TomorrowOS";
         Width = 420;
-        Height = 210;
+        Height = 230;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Topmost = true;
         ShowActivated = true;
@@ -36,7 +36,7 @@ internal sealed class PasscodeDialog : Window
         var panel = new StackPanel { Margin = new Thickness(20) };
         panel.Children.Add(new TextBlock
         {
-            Text = "Enter maintenance passcode",
+            Text = "Enter maintenance passcode to exit",
             FontSize = 16,
             Margin = new Thickness(0, 0, 0, 8)
         });
@@ -70,7 +70,7 @@ internal sealed class PasscodeDialog : Window
             Margin = new Thickness(0, 16, 0, 0)
         };
 
-        var ok = new Button { Content = "Unlock", Width = 88, Height = 32, Margin = new Thickness(0, 0, 8, 0), IsDefault = true };
+        var ok = new Button { Content = "Exit", Width = 88, Height = 32, Margin = new Thickness(0, 0, 8, 0), IsDefault = true };
         var cancel = new Button { Content = "Cancel", Width = 88, Height = 32, IsCancel = true };
 
         ok.Click += (_, _) => Submit();

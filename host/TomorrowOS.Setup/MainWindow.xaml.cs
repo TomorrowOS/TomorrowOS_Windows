@@ -247,6 +247,7 @@ public partial class MainWindow : Window
             AutoStart = Harden("autostart"),
             ApplyHardening = applyHardening && GetString(p, "role", "dedicated") != "shared",
             StartWatchdog = Harden("watchdog"),
+            HideCursorDuringPlayback = Harden("cursor"),
             CmsEndpoint = ""
         };
     }

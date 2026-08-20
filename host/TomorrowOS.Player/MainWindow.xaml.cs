@@ -14,16 +14,19 @@ public partial class MainWindow : Window
 {
     private readonly BridgeHost _bridge;
     private readonly DispatcherTimer _focusTimer;
+    private readonly DispatcherTimer _cursorIdleTimer;
     private bool _maintenancePromptOpen;
     private bool _allowClose;
     private bool _displayQuiet;
     private bool _restorePlayerTopmost;
+    private bool _hideCursorDuringPlayback = true;
     private PasscodeDialog? _passcodeDialog;
     private DateTime _lastMaintenanceRequestUtc = DateTime.MinValue;
 
     // Avoid F12 combos — many OEM / Windows utilities bind those to Calculator.
     private const string HotkeyChordHint = "Ctrl+Shift+Alt+M";
     private static readonly TimeSpan MaintenanceDebounce = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan CursorIdleHideAfter = TimeSpan.FromSeconds(2);
 
     private const uint SwpNozorder = 0x0004;
     private const uint SwpShowwindow = 0x0040;
@@ -56,12 +59,30 @@ public partial class MainWindow : Window
         }
 
         _bridge = new BridgeHost(WebView, this);
+        _hideCursorDuringPlayback = ReadHideCursorSetting();
 
         // WPF WebView2 forwards accelerator keys here (not to Window.KeyDown).
         WebView.PreviewKeyDown += WebView_PreviewKeyDown;
+        PreviewKeyDown += Window_PreviewKeyDown;
 
-        // Playback: never show cursor, even while moving the mouse.
-        SetCursorVisible(false);
+        // Alt + mixed order combos often never reach PreviewKeyDown inside WebView2.
+        // Poll physical key state instead of a low-level hook (WebView2 is another PID).
+        Loaded += (_, _) =>
+        {
+            var hwnd = new WindowInteropHelper(this).EnsureHandle();
+            MaintenanceHotkeyHook.Start(RequestMaintenancePrompt, hwnd);
+        };
+        Closed += (_, _) => MaintenanceHotkeyHook.Stop();
+
+        _cursorIdleTimer = new DispatcherTimer { Interval = CursorIdleHideAfter };
+        _cursorIdleTimer.Tick += (_, _) =>
+        {
+            _cursorIdleTimer.Stop();
+            if (_maintenancePromptOpen || !_hideCursorDuringPlayback) return;
+            SetCursorVisible(false);
+        };
+
+        ApplyPlaybackCursorPolicy(forceHide: true);
 
         _focusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _focusTimer.Tick += (_, _) =>
@@ -79,14 +100,13 @@ public partial class MainWindow : Window
         MouseMove += (_, _) =>
         {
             if (_maintenancePromptOpen) return;
-            // Keep forcing hide — WebView2 can restore its own cursor on move.
-            SetCursorVisible(false);
+            OnPlaybackMouseMove();
         };
 
         Loaded += async (_, _) =>
         {
             PlaceOnConfiguredDisplay();
-            SetCursorVisible(false);
+            ApplyPlaybackCursorPolicy(forceHide: true);
             try
             {
                 await _bridge.InitializeAsync();
@@ -96,7 +116,7 @@ public partial class MainWindow : Window
                     {
                         if (args.IsSuccess && !_maintenancePromptOpen)
                         {
-                            SetCursorVisible(false);
+                            ApplyPlaybackCursorPolicy(forceHide: true);
                         }
                     };
                 }
@@ -231,27 +251,25 @@ public partial class MainWindow : Window
         }
     }
 
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        TryHandleMaintenanceChord(e);
+    }
+
     private void WebView_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (!IsMaintenanceChord(e.Key))
+        TryHandleMaintenanceChord(e);
+    }
+
+    private void TryHandleMaintenanceChord(KeyEventArgs e)
+    {
+        if (!MaintenanceHotkeyHook.IsChordPhysicallyDown())
         {
             return;
         }
 
         e.Handled = true;
         RequestMaintenancePrompt();
-    }
-
-    private static bool IsMaintenanceChord(Key key)
-    {
-        if (key != Key.M)
-        {
-            return false;
-        }
-
-        return (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl)) &&
-               (Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift)) &&
-               (Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt));
     }
 
     public void RequestMaintenancePrompt()
@@ -281,7 +299,6 @@ public partial class MainWindow : Window
 
         _passcodeDialog = PasscodeDialog.ShowFloating(ValidatePasscode);
         _passcodeDialog.Unlocked += OnMaintenanceUnlocked;
-        _passcodeDialog.Cancelled += OnMaintenanceCancelled;
         _passcodeDialog.Closed += OnPasscodeDialogClosed;
     }
 
@@ -290,29 +307,26 @@ public partial class MainWindow : Window
         ExitAfterMaintenanceUnlock();
     }
 
-    private void OnMaintenanceCancelled()
-    {
-        if (!_allowClose)
-        {
-            SetCursorVisible(false);
-        }
-    }
-
     private void OnPasscodeDialogClosed(object? sender, EventArgs e)
     {
         if (_passcodeDialog != null)
         {
             _passcodeDialog.Unlocked -= OnMaintenanceUnlocked;
-            _passcodeDialog.Cancelled -= OnMaintenanceCancelled;
             _passcodeDialog.Closed -= OnPasscodeDialogClosed;
             _passcodeDialog = null;
         }
 
         _maintenancePromptOpen = false;
 
-        if (!_allowClose && _restorePlayerTopmost)
+        if (!_allowClose)
         {
-            Topmost = true;
+            if (_restorePlayerTopmost)
+            {
+                Topmost = true;
+            }
+
+            // Must run AFTER clearing _maintenancePromptOpen (policy ignores updates while open).
+            ApplyPlaybackCursorPolicy(forceHide: true);
         }
     }
 
@@ -368,9 +382,76 @@ public partial class MainWindow : Window
         Close();
     }
 
+    private static bool ReadHideCursorSetting()
+    {
+        try
+        {
+            var settingsPath = AppPaths.SettingsFile;
+            if (!File.Exists(settingsPath))
+            {
+                return true;
+            }
+
+            var json = File.ReadAllText(settingsPath);
+            var match = System.Text.RegularExpressions.Regex.Match(
+                json,
+                "\"hideCursorDuringPlayback\"\\s*:\\s*(true|false)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (!match.Success)
+            {
+                return true;
+            }
+
+            return match.Groups[1].Value.Equals("true", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
     /// <summary>
-    /// Hide cursor during playback; show only during maintenance unlock (Ctrl+Shift+Alt+M).
-    /// Must also set CSS inside WebView2 — WPF OverrideCursor does not cover the HWND.
+    /// Applies installer "Hide mouse cursor after inactivity".
+    /// Off → cursor stays visible during playback.
+    /// On → hide after idle; mouse move briefly shows it again.
+    /// </summary>
+    private void ApplyPlaybackCursorPolicy(bool forceHide)
+    {
+        if (_maintenancePromptOpen)
+        {
+            return;
+        }
+
+        if (!_hideCursorDuringPlayback)
+        {
+            _cursorIdleTimer.Stop();
+            SetCursorVisible(true);
+            return;
+        }
+
+        if (forceHide)
+        {
+            _cursorIdleTimer.Stop();
+            SetCursorVisible(false);
+        }
+    }
+
+    private void OnPlaybackMouseMove()
+    {
+        if (!_hideCursorDuringPlayback)
+        {
+            SetCursorVisible(true);
+            return;
+        }
+
+        // Option on: show while moving, hide again after inactivity.
+        SetCursorVisible(true);
+        _cursorIdleTimer.Stop();
+        _cursorIdleTimer.Start();
+    }
+
+    /// <summary>
+    /// Hide/show cursor. Must also set CSS inside WebView2 — WPF OverrideCursor does not cover the HWND.
     /// </summary>
     private void SetCursorVisible(bool visible)
     {

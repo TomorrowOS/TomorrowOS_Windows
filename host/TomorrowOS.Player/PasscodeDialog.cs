@@ -26,14 +26,36 @@ internal sealed class PasscodeDialog : Window
 
         Title = "TomorrowOS";
         Width = 420;
-        Height = 230;
+        MinWidth = 420;
+        MaxWidth = 420;
+        // Grow with content so the error line never clips Exit / Cancel.
+        SizeToContent = SizeToContent.Height;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Topmost = true;
         ShowActivated = true;
         ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false;
 
-        var panel = new StackPanel { Margin = new Thickness(20) };
+        var root = new DockPanel { Margin = new Thickness(20) };
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 16, 0, 0)
+        };
+
+        var ok = new Button { Content = "Exit", Width = 88, Height = 32, Margin = new Thickness(0, 0, 8, 0), IsDefault = true };
+        var cancel = new Button { Content = "Cancel", Width = 88, Height = 32, IsCancel = true };
+
+        ok.Click += (_, _) => Submit();
+        cancel.Click += (_, _) => Dismiss(false);
+        buttons.Children.Add(ok);
+        buttons.Children.Add(cancel);
+        DockPanel.SetDock(buttons, Dock.Bottom);
+        root.Children.Add(buttons);
+
+        var panel = new StackPanel();
         panel.Children.Add(new TextBlock
         {
             Text = "Enter maintenance passcode to exit",
@@ -54,27 +76,6 @@ internal sealed class PasscodeDialog : Window
             FontSize = 14
         };
         panel.Children.Add(_box);
-
-        _error = new TextBlock
-        {
-            Foreground = System.Windows.Media.Brushes.Firebrick,
-            Margin = new Thickness(0, 8, 0, 0),
-            Visibility = Visibility.Collapsed
-        };
-        panel.Children.Add(_error);
-
-        var buttons = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 16, 0, 0)
-        };
-
-        var ok = new Button { Content = "Exit", Width = 88, Height = 32, Margin = new Thickness(0, 0, 8, 0), IsDefault = true };
-        var cancel = new Button { Content = "Cancel", Width = 88, Height = 32, IsCancel = true };
-
-        ok.Click += (_, _) => Submit();
-        cancel.Click += (_, _) => Dismiss(false);
         _box.KeyDown += (_, e) =>
         {
             if (e.Key == Key.Enter)
@@ -84,10 +85,18 @@ internal sealed class PasscodeDialog : Window
             }
         };
 
-        buttons.Children.Add(ok);
-        buttons.Children.Add(cancel);
-        panel.Children.Add(buttons);
-        Content = panel;
+        // Always reserve one line so showing an error does not reflow over the buttons.
+        _error = new TextBlock
+        {
+            Foreground = System.Windows.Media.Brushes.Firebrick,
+            Margin = new Thickness(0, 8, 0, 0),
+            MinHeight = 20,
+            TextWrapping = TextWrapping.Wrap,
+            Visibility = Visibility.Hidden
+        };
+        panel.Children.Add(_error);
+        root.Children.Add(panel);
+        Content = root;
 
         PreviewKeyDown += (_, e) =>
         {
@@ -117,14 +126,14 @@ internal sealed class PasscodeDialog : Window
 
     private static bool IsMaintenanceChord(KeyEventArgs e)
     {
-        if (e.Key != Key.M)
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key is not (Key.M or Key.LeftCtrl or Key.RightCtrl or Key.LeftShift or Key.RightShift
+            or Key.LeftAlt or Key.RightAlt))
         {
             return false;
         }
 
-        return (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl)) &&
-               (Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift)) &&
-               (Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt));
+        return MaintenanceHotkeyHook.IsChordPhysicallyDown();
     }
 
     private void Dismiss(bool unlocked)

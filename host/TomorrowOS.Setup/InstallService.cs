@@ -24,6 +24,8 @@ internal sealed class InstallRequest
     public bool AutoStart { get; set; } = true;
     public bool ApplyHardening { get; set; }
     public bool StartWatchdog { get; set; } = true;
+    /// <summary>Installer "Hide mouse cursor after inactivity".</summary>
+    public bool HideCursorDuringPlayback { get; set; } = true;
 }
 
 internal static class InstallService
@@ -114,6 +116,7 @@ internal static class InstallService
             siteName = req.SiteName,
             timeZone = req.TimeZone,
             maintenanceWindow = req.MaintenanceWindow,
+            hideCursorDuringPlayback = req.HideCursorDuringPlayback,
             installedAt = DateTime.UtcNow.ToString("O")
         };
         File.WriteAllText(

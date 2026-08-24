@@ -7,3 +7,4 @@ build/
 *.log
 host/**/bin/
 host/**/obj/
+host/TomorrowOS.Setup/bundle/

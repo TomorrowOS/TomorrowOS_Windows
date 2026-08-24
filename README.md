@@ -38,8 +38,8 @@ npm run build
 
 Output:
 
-- `build/windows/TomorrowOS-Windows-Setup.exe` — installer
-- `build/windows/payload/` — Player + Watchdog + wwwroot + hardening script
+- `build/windows/TomorrowOS-Windows-Setup.exe` — **single-file installer** (share this one file)
+- `build/windows/payload/` — unpacked Player + Watchdog (dev / debugging)
 
 ## Install
 

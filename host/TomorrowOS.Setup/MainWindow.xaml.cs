@@ -73,12 +73,9 @@ public partial class MainWindow : Window
         if (!File.Exists(installerHtml))
         {
             throw new FileNotFoundException(
-                "Installer UI not found next to this executable.\n\n" +
-                "Use the full package:\n" +
-                "  build\\windows\\setup\\TomorrowOS-Windows-Setup.exe\n" +
-                "or the launcher:\n" +
-                "  build\\windows\\TomorrowOS-Windows-Setup.lnk\n\n" +
-                "A lone Setup.exe copy at the build root cannot run — it is missing wwwroot, payload, and runtime files.\n\n" +
+                "Installer UI was not packed into this Setup.exe.\n\n" +
+                "Rebuild with npm run build, then use:\n" +
+                "  build\\windows\\TomorrowOS-Windows-Setup.exe\n\n" +
                 "Looked for:\n" + installerHtml);
         }
 

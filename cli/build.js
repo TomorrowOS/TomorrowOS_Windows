@@ -19,15 +19,18 @@ function run(cmd, args, cwd) {
   }
 }
 
-function copyDir(src, dest) {
+function copyDir(src, dest, skipExt = []) {
   fs.mkdirSync(dest, { recursive: true });
+  const skip = new Set(skipExt.map((e) => e.toLowerCase()));
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const from = path.join(src, entry.name);
     const to = path.join(dest, entry.name);
     if (entry.isDirectory()) {
-      copyDir(from, to);
+      copyDir(from, to, skipExt);
       continue;
     }
+    const ext = path.extname(entry.name).toLowerCase();
+    if (skip.has(ext)) continue;
     try {
       fs.copyFileSync(from, to);
     } catch (err) {
@@ -89,6 +92,23 @@ run(
   HOST
 );
 
+// Payload = full Player output + Watchdog exe only. Must exist BEFORE Setup publish
+// so it can be packed into the single-file installer.
+copyDir(playerOut, PAYLOAD, [".pdb"]);
+const watchdogExe = path.join(watchdogOut, "TomorrowOS.Watchdog.exe");
+if (!fs.existsSync(watchdogExe)) {
+  console.error("Watchdog exe missing after publish:", watchdogExe);
+  process.exit(1);
+}
+fs.copyFileSync(watchdogExe, path.join(PAYLOAD, "TomorrowOS.Watchdog.exe"));
+
+const hardeningSrc = path.join(ROOT, "hardening");
+copyDir(hardeningSrc, path.join(PAYLOAD, "hardening"));
+
+const setupBundle = path.join(HOST, "TomorrowOS.Setup", "bundle", "payload");
+rimrafBestEffort(setupBundle);
+copyDir(PAYLOAD, setupBundle, [".pdb"]);
+
 run(
   "dotnet",
   [
@@ -100,79 +120,25 @@ run(
     "win-x64",
     "--self-contained",
     "true",
+    "-p:PublishSingleFile=true",
+    "-p:IncludeNativeLibrariesForSelfExtract=true",
+    "-p:IncludeAllContentForSelfExtract=true",
+    "-p:EnableCompressionInSingleFile=true",
     "-o",
     setupOut
   ],
   HOST
 );
 
-// Payload = full Player output + Watchdog exe only.
-copyDir(playerOut, PAYLOAD);
-const watchdogExe = path.join(watchdogOut, "TomorrowOS.Watchdog.exe");
-if (!fs.existsSync(watchdogExe)) {
-  console.error("Watchdog exe missing after publish:", watchdogExe);
+const packedSetup = path.join(setupOut, "TomorrowOS-Windows-Setup.exe");
+if (!fs.existsSync(packedSetup)) {
+  console.error("Single-file Setup.exe missing after publish:", packedSetup);
   process.exit(1);
 }
-fs.copyFileSync(watchdogExe, path.join(PAYLOAD, "TomorrowOS.Watchdog.exe"));
 
-const hardeningSrc = path.join(ROOT, "hardening");
-copyDir(hardeningSrc, path.join(PAYLOAD, "hardening"));
-
-// Bundle payload next to Setup.exe for interactive/silent installers
-copyDir(PAYLOAD, path.join(setupOut, "payload"));
-copyDir(hardeningSrc, path.join(setupOut, "hardening"));
-
-// Never copy a bare Setup.exe to the build root — it is missing wwwroot, payload,
-// and the self-contained runtime next to it, so double-click appears to "do nothing".
-const rootOrphanExe = path.join(OUT, "TomorrowOS-Windows-Setup.exe");
-try {
-  if (fs.existsSync(rootOrphanExe)) {
-    fs.unlinkSync(rootOrphanExe);
-  }
-} catch (err) {
-  console.warn(`Could not remove orphan root Setup.exe: ${err.message}`);
-}
-
-// Convenience launcher at build/windows so opening from the build root still works.
-const setupLauncher = path.join(OUT, "TomorrowOS-Windows-Setup.cmd");
-fs.writeFileSync(
-  setupLauncher,
-  [
-    "@echo off",
-    "setlocal",
-    'cd /d "%~dp0setup"',
-    'if not exist "TomorrowOS-Windows-Setup.exe" (',
-    "  echo TomorrowOS Setup was not found in the setup folder.",
-    "  echo Run npm run build first.",
-    "  pause",
-    "  exit /b 1",
-    ")",
-    'start "" "TomorrowOS-Windows-Setup.exe" %*',
-    ""
-  ].join("\r\n"),
-  "utf8"
-);
-
-// Windows shortcut (.lnk) also points at the full package (icon + double-click).
-try {
-  const ps = [
-    `$out = '${OUT.replace(/'/g, "''")}'`,
-    `$target = Join-Path $out 'setup\\TomorrowOS-Windows-Setup.exe'`,
-    `$lnkPath = Join-Path $out 'TomorrowOS-Windows-Setup.lnk'`,
-    `$w = New-Object -ComObject WScript.Shell`,
-    `$s = $w.CreateShortcut($lnkPath)`,
-    `$s.TargetPath = $target`,
-    `$s.WorkingDirectory = (Join-Path $out 'setup')`,
-    `$s.Description = 'Install TomorrowOS Windows Player'`,
-    `$s.Save()`
-  ].join("; ");
-  spawnSync("powershell.exe", ["-NoProfile", "-Command", ps], {
-    stdio: "ignore",
-    shell: false
-  });
-} catch (err) {
-  console.warn(`Could not create Setup shortcut: ${err.message}`);
-}
+// Shareable artifact: one exe at the build root.
+const shareableSetup = path.join(OUT, "TomorrowOS-Windows-Setup.exe");
+fs.copyFileSync(packedSetup, shareableSetup);
 
 // Sanity check: Player WPF assembly must remain the full build, not a stub.
 const windowsBase = path.join(PAYLOAD, "WindowsBase.dll");
@@ -184,17 +150,25 @@ if (wbSize < 500_000) {
   process.exit(1);
 }
 
-const installerUi = path.join(setupOut, "wwwroot", "installer.html");
-if (!fs.existsSync(installerUi)) {
-  console.error("Setup UI missing after publish:", installerUi);
+const bundledPlayer = path.join(setupBundle, "TomorrowOS.Player.exe");
+if (!fs.existsSync(bundledPlayer)) {
+  console.error("Setup bundle is missing TomorrowOS.Player.exe:", bundledPlayer);
+  process.exit(1);
+}
+
+const packedSize = fs.statSync(packedSetup).size;
+if (packedSize < 20_000_000) {
+  console.error(
+    `Packed Setup.exe is too small (${(packedSize / 1024 / 1024).toFixed(1)} MB). Payload may not have been embedded.`
+  );
   process.exit(1);
 }
 
 console.log(`Build complete: ${OUT}`);
 console.log(`WindowsBase.dll: ${(wbSize / 1024).toFixed(0)} KB`);
-console.log("Interactive: build/windows/setup/TomorrowOS-Windows-Setup.exe");
-console.log("From build root: TomorrowOS-Windows-Setup.lnk (or .cmd)");
-console.log("Run player: build/windows/payload/TomorrowOS.Player.exe");
+console.log(`Share this file: ${shareableSetup}`);
+console.log(`Packed Setup size: ${(packedSize / 1024 / 1024).toFixed(1)} MB`);
+console.log("Run player (dev): build/windows/payload/TomorrowOS.Player.exe");
 console.log(
-  'Silent: build\\windows\\setup\\TomorrowOS-Windows-Setup.exe /silent /cms "https://cms" /passcode "secret" /orientation landscape'
+  'Silent: build\\windows\\TomorrowOS-Windows-Setup.exe /silent /cms "https://cms" /passcode "secret" /orientation landscape'
 );

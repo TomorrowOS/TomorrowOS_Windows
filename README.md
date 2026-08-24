@@ -39,7 +39,7 @@ npm run build
 Output:
 
 - `build/windows/TomorrowOS-Windows-Setup.exe` — **single-file installer** (share this one file)
-- `build/windows/payload/` — unpacked Player + Watchdog (dev / debugging)
+- `build/windows/payload/` — unpacked Player + Watchdog + uninstaller (dev / debugging)
 
 ## Install
 
@@ -59,7 +59,9 @@ Run `TomorrowOS-Windows-Setup.exe`, set:
 TomorrowOS-Windows-Setup.exe /silent /cms "https://your-cms.example.com" /passcode "change-me" /orientation landscape /display 0 /harden
 ```
 
-Uninstall (manual V1): stop Watchdog/Player, remove install dir, delete `%ProgramData%\TomorrowOS`, remove `HKCU\...\Run\TomorrowOSWatchdog`.
+### Uninstall
+
+After install, run `TomorrowOS.Uninstall.exe` in the install folder. Confirm **Uninstall TomorrowOS Windows**, wait for the progress bar, then **Uninstall successful**.
 
 ## Runtime notes
 

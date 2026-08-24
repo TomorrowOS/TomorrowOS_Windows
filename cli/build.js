@@ -53,6 +53,7 @@ fs.mkdirSync(PAYLOAD, { recursive: true });
 
 const playerOut = path.join(OUT, "player");
 const watchdogOut = path.join(OUT, "watchdog");
+const uninstallOut = path.join(OUT, "uninstall");
 const setupOut = path.join(OUT, "setup");
 
 run(
@@ -101,6 +102,33 @@ if (!fs.existsSync(watchdogExe)) {
   process.exit(1);
 }
 fs.copyFileSync(watchdogExe, path.join(PAYLOAD, "TomorrowOS.Watchdog.exe"));
+
+run(
+  "dotnet",
+  [
+    "publish",
+    "TomorrowOS.Uninstall/TomorrowOS.Uninstall.csproj",
+    "-c",
+    "Release",
+    "-r",
+    "win-x64",
+    "--self-contained",
+    "true",
+    "-p:PublishSingleFile=true",
+    "-p:IncludeNativeLibrariesForSelfExtract=true",
+    "-p:EnableCompressionInSingleFile=true",
+    "-o",
+    uninstallOut
+  ],
+  HOST
+);
+
+const uninstallExe = path.join(uninstallOut, "TomorrowOS.Uninstall.exe");
+if (!fs.existsSync(uninstallExe)) {
+  console.error("Uninstall exe missing after publish:", uninstallExe);
+  process.exit(1);
+}
+fs.copyFileSync(uninstallExe, path.join(PAYLOAD, "TomorrowOS.Uninstall.exe"));
 
 const hardeningSrc = path.join(ROOT, "hardening");
 copyDir(hardeningSrc, path.join(PAYLOAD, "hardening"));

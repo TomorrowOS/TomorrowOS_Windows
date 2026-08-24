@@ -8,6 +8,9 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
+        // Splash close must not shut down the app before the real installer window opens.
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
         var silent = e.Args.Any(a =>
             a.Equals("/silent", StringComparison.OrdinalIgnoreCase) ||
             a.Equals("--silent", StringComparison.OrdinalIgnoreCase));
@@ -28,6 +31,15 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        var splash = new SplashWindow();
+        var proceed = splash.ShowDialog() == true;
+        if (!proceed)
+        {
+            Shutdown(0);
+            return;
+        }
+
+        ShutdownMode = ShutdownMode.OnMainWindowClose;
         var window = new MainWindow();
         MainWindow = window;
         window.Show();

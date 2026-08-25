@@ -30,6 +30,7 @@ internal static class SilentInstaller
             Passcode = GetArg("/passcode", ""),
             AutoStart = !args.Any(a => a.Equals("/noautostart", StringComparison.OrdinalIgnoreCase)),
             ApplyHardening = args.Any(a => a.Equals("/harden", StringComparison.OrdinalIgnoreCase)),
+            DisableScreensaver = args.Any(a => a.Equals("/harden", StringComparison.OrdinalIgnoreCase)),
             StartWatchdog = !args.Any(a => a.Equals("/nowatchdog", StringComparison.OrdinalIgnoreCase)),
             HideCursorDuringPlayback = !args.Any(a => a.Equals("/showcursor", StringComparison.OrdinalIgnoreCase)),
             DeviceName = GetArg("/name", ""),

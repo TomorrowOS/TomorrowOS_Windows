@@ -243,6 +243,7 @@ public partial class MainWindow : Window
             Role = GetString(p, "role", "dedicated"),
             AutoStart = Harden("autostart"),
             ApplyHardening = applyHardening && GetString(p, "role", "dedicated") != "shared",
+            DisableScreensaver = Harden("saver"),
             StartWatchdog = Harden("watchdog"),
             HideCursorDuringPlayback = Harden("cursor"),
             CmsEndpoint = ""

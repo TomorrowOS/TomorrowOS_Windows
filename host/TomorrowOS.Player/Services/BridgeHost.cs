@@ -35,13 +35,24 @@ internal sealed class BridgeHost
         _downloads = new DownloadService(_storage);
     }
 
-    public async Task InitializeAsync()
+    public async Task InitializeAsync(bool allowScreensaver = false)
     {
         AppPaths.EnsureDirectories();
         WriteHeartbeat();
 
+        CoreWebView2EnvironmentOptions? envOptions = null;
+        if (allowScreensaver)
+        {
+            // Chromium wake lock / idle detection otherwise blocks the screen saver
+            // even when Windows still has a saver configured.
+            envOptions = new CoreWebView2EnvironmentOptions(
+                additionalBrowserArguments: "--disable-features=WakeLock,IdleDetection");
+        }
+
         var env = await CoreWebView2Environment.CreateAsync(
-            userDataFolder: Path.Combine(AppPaths.ProgramDataRoot, "webview2"));
+            browserExecutableFolder: null,
+            userDataFolder: Path.Combine(AppPaths.ProgramDataRoot, "webview2"),
+            options: envOptions);
         await _webView.EnsureCoreWebView2Async(env);
 
         var core = _webView.CoreWebView2;

@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private bool _displayQuiet;
     private bool _restorePlayerTopmost;
     private bool _hideCursorDuringPlayback = true;
+    private readonly bool _disableScreensaver;
     private PasscodeDialog? _passcodeDialog;
     private DateTime _lastMaintenanceRequestUtc = DateTime.MinValue;
 
@@ -60,6 +61,7 @@ public partial class MainWindow : Window
 
         _bridge = new BridgeHost(WebView, this);
         _hideCursorDuringPlayback = ReadHideCursorSetting();
+        _disableScreensaver = ReadBoolSetting("disableScreensaver", fallback: true);
 
         // WPF WebView2 forwards accelerator keys here (not to Window.KeyDown).
         WebView.PreviewKeyDown += WebView_PreviewKeyDown;
@@ -71,6 +73,10 @@ public partial class MainWindow : Window
         {
             var hwnd = new WindowInteropHelper(this).EnsureHandle();
             MaintenanceHotkeyHook.Start(RequestMaintenancePrompt, hwnd);
+            if (PresentationSource.FromVisual(this) is HwndSource source)
+            {
+                source.AddHook(WndProc);
+            }
         };
         Closed += (_, _) => MaintenanceHotkeyHook.Stop();
 
@@ -87,6 +93,8 @@ public partial class MainWindow : Window
         _focusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _focusTimer.Tick += (_, _) =>
         {
+            // Activate() resets Windows idle time and blocks the screen saver.
+            if (!_disableScreensaver) return;
             // Never Activate during quiet — that wakes the monitor and caused instability.
             if (_maintenancePromptOpen || _allowClose || _displayQuiet) return;
             if (!IsActive)
@@ -109,7 +117,7 @@ public partial class MainWindow : Window
             ApplyPlaybackCursorPolicy(forceHide: true);
             try
             {
-                await _bridge.InitializeAsync();
+                await _bridge.InitializeAsync(allowScreensaver: !_disableScreensaver);
                 if (WebView.CoreWebView2 != null)
                 {
                     WebView.CoreWebView2.NavigationCompleted += (_, args) =>
@@ -130,6 +138,23 @@ public partial class MainWindow : Window
                     MessageBoxImage.Error);
             }
         };
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        const int wmSyscommand = 0x0112;
+        const int scScreensaver = 0xF140;
+        const int scMonitorpower = 0xF170;
+        if (msg == wmSyscommand)
+        {
+            var cmd = wParam.ToInt32() & 0xFFF0;
+            if (cmd is scScreensaver or scMonitorpower)
+            {
+                handled = _disableScreensaver;
+            }
+        }
+
+        return IntPtr.Zero;
     }
 
     /// <summary>
@@ -382,33 +407,36 @@ public partial class MainWindow : Window
         Close();
     }
 
-    private static bool ReadHideCursorSetting()
+    private static bool ReadBoolSetting(string propertyName, bool fallback)
     {
         try
         {
             var settingsPath = AppPaths.SettingsFile;
             if (!File.Exists(settingsPath))
             {
-                return true;
+                return fallback;
             }
 
             var json = File.ReadAllText(settingsPath);
             var match = System.Text.RegularExpressions.Regex.Match(
                 json,
-                "\"hideCursorDuringPlayback\"\\s*:\\s*(true|false)",
+                "\"" + propertyName + "\"\\s*:\\s*(true|false)",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             if (!match.Success)
             {
-                return true;
+                return fallback;
             }
 
             return match.Groups[1].Value.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
         catch
         {
-            return true;
+            return fallback;
         }
     }
+
+    private static bool ReadHideCursorSetting() =>
+        ReadBoolSetting("hideCursorDuringPlayback", fallback: true);
 
     /// <summary>
     /// Applies installer "Hide mouse cursor after inactivity".

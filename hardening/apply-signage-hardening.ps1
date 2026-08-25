@@ -5,7 +5,7 @@ $ErrorActionPreference = "Continue"
 
 Write-Host "Applying TomorrowOS signage hardening..."
 
-# Disable sleep / hibernate / screensaver for current power scheme
+# Disable sleep / hibernate / display-off for current power scheme
 powercfg /change standby-timeout-ac 0 | Out-Null
 powercfg /change standby-timeout-dc 0 | Out-Null
 powercfg /change hibernate-timeout-ac 0 | Out-Null
@@ -13,8 +13,8 @@ powercfg /change hibernate-timeout-dc 0 | Out-Null
 powercfg /change monitor-timeout-ac 0 | Out-Null
 powercfg /change monitor-timeout-dc 0 | Out-Null
 
-# Screensaver off
-reg add "HKCU\Control Panel\Desktop" /v ScreenSaveActive /t REG_SZ /d 0 /f | Out-Null
+# Screensaver is applied by Setup when "Disable screen saver" is on — do not
+# write it here, or that toggle being off would still kill the screen saver.
 
 # Reduce consumer / tip noise (current user)
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v SubscribedContent-338389Enabled /t REG_DWORD /d 0 /f | Out-Null

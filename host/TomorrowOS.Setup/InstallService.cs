@@ -26,6 +26,8 @@ internal sealed class InstallRequest
     public bool StartWatchdog { get; set; } = true;
     /// <summary>Installer "Hide mouse cursor after inactivity".</summary>
     public bool HideCursorDuringPlayback { get; set; } = true;
+    /// <summary>Prepare Windows → Disable screen saver.</summary>
+    public bool DisableScreensaver { get; set; }
 }
 
 internal static class InstallService
@@ -117,6 +119,7 @@ internal static class InstallService
             timeZone = req.TimeZone,
             maintenanceWindow = req.MaintenanceWindow,
             hideCursorDuringPlayback = req.HideCursorDuringPlayback,
+            disableScreensaver = req.DisableScreensaver,
             installedAt = DateTime.UtcNow.ToString("O")
         };
         File.WriteAllText(
@@ -128,6 +131,91 @@ internal static class InstallService
     {
         using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
         key?.SetValue("TomorrowOSWatchdog", "\"" + watchdogPath + "\"");
+    }
+
+    /// <summary>
+    /// Turns the Windows screen saver off for the current user and applies it immediately.
+    /// Registry-only writes often do nothing until logoff; SystemParametersInfo notifies the shell.
+    /// </summary>
+    public static void ApplyDisableScreensaver()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Control Panel\Desktop", writable: true)
+                ?? Registry.CurrentUser.CreateSubKey(@"Control Panel\Desktop");
+            if (key != null)
+            {
+                key.SetValue("ScreenSaveActive", "0", RegistryValueKind.String);
+                key.SetValue("ScreenSaveTimeOut", "0", RegistryValueKind.String);
+                key.SetValue("ScreenSaverIsSecure", "0", RegistryValueKind.String);
+                key.SetValue("SCRNSAVE.EXE", "", RegistryValueKind.String);
+            }
+        }
+        catch
+        {
+            // continue — SystemParametersInfo still applies for this session
+        }
+
+        const uint SpiSetScreenSaveActive = 0x0011;
+        const uint SpiSetScreenSaveTimeout = 0x000F;
+        const uint SpifUpdateIniFile = 0x01;
+        const uint SpifSendWinIniChange = 0x02;
+        var flags = SpifUpdateIniFile | SpifSendWinIniChange;
+
+        NativeMethods.SystemParametersInfo(SpiSetScreenSaveTimeout, 0, IntPtr.Zero, flags);
+        NativeMethods.SystemParametersInfo(SpiSetScreenSaveActive, 0, IntPtr.Zero, flags);
+    }
+
+    /// <summary>
+    /// Toggle off: undo a previous disable so the Windows screen saver can run again.
+    /// </summary>
+    public static void RestoreScreensaver()
+    {
+        const uint SpiSetScreenSaveActive = 0x0011;
+        const uint SpiSetScreenSaveTimeout = 0x000F;
+        const uint SpifUpdateIniFile = 0x01;
+        const uint SpifSendWinIniChange = 0x02;
+        var flags = SpifUpdateIniFile | SpifSendWinIniChange;
+
+        var timeoutSec = 60;
+        var scr = Path.Combine(Environment.SystemDirectory, "scrnsave.scr");
+
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Control Panel\Desktop", writable: true)
+                ?? Registry.CurrentUser.CreateSubKey(@"Control Panel\Desktop");
+            if (key != null)
+            {
+                var existingScr = key.GetValue("SCRNSAVE.EXE") as string;
+                if (!string.IsNullOrWhiteSpace(existingScr) && File.Exists(existingScr.Trim()))
+                {
+                    scr = existingScr.Trim();
+                }
+
+                var existingTimeout = key.GetValue("ScreenSaveTimeOut") as string;
+                if (int.TryParse(existingTimeout, out var parsed) && parsed > 0)
+                {
+                    timeoutSec = parsed;
+                }
+
+                key.SetValue("ScreenSaveActive", "1", RegistryValueKind.String);
+                key.SetValue("ScreenSaveTimeOut", timeoutSec.ToString(), RegistryValueKind.String);
+                key.SetValue("SCRNSAVE.EXE", scr, RegistryValueKind.String);
+            }
+        }
+        catch
+        {
+            // SystemParametersInfo still applies for this session
+        }
+
+        NativeMethods.SystemParametersInfo(SpiSetScreenSaveTimeout, (uint)timeoutSec, IntPtr.Zero, flags);
+        NativeMethods.SystemParametersInfo(SpiSetScreenSaveActive, 1, IntPtr.Zero, flags);
+    }
+
+    private static class NativeMethods
+    {
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
     }
 
     public static void RunHardeningScript(string installDir)
@@ -145,13 +233,16 @@ internal static class InstallService
             return;
         }
 
-        Process.Start(new ProcessStartInfo
+        using var process = Process.Start(new ProcessStartInfo
         {
             FileName = "powershell.exe",
-            Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\"",
-            UseShellExecute = true,
-            Verb = "runas"
-        })?.WaitForExit(120000);
+            Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + script + "\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        });
+        process?.WaitForExit(120000);
     }
 
     public static void LaunchWatchdog(string installDir)
@@ -252,6 +343,17 @@ internal static class InstallService
         log?.Invoke("Creating local cache…", "info");
         WriteConfig(req.InstallDir, req.CmsEndpoint, req.Orientation, req.DisplayIndex, req.ContentFit);
         WriteSettings(req);
+
+        if (req.DisableScreensaver)
+        {
+            log?.Invoke("Disabling Windows screen saver…", "info");
+            ApplyDisableScreensaver();
+        }
+        else
+        {
+            log?.Invoke("Leaving Windows screen saver enabled…", "info");
+            RestoreScreensaver();
+        }
 
         if (req.ApplyHardening)
         {

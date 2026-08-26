@@ -228,8 +228,8 @@ public partial class MainWindow : Window
             v.ValueKind == JsonValueKind.True;
 
         var applyHardening =
-            Harden("sleep") || Harden("hibernate") || Harden("saver") || Harden("lock") ||
-            Harden("notif") || Harden("taskbar") || Harden("overlay") || Harden("updates") ||
+            Harden("hibernate") || Harden("saver") || Harden("lock") ||
+            Harden("notif") || Harden("overlay") || Harden("updates") ||
             Harden("fallback");
 
         return new InstallRequest
@@ -244,8 +244,10 @@ public partial class MainWindow : Window
             AutoStart = Harden("autostart"),
             ApplyHardening = applyHardening && GetString(p, "role", "dedicated") != "shared",
             DisableScreensaver = Harden("saver"),
+            DisableSleep = Harden("sleep"),
             StartWatchdog = Harden("watchdog"),
             HideCursorDuringPlayback = Harden("cursor"),
+            HideTaskbarDuringPlayback = Harden("taskbar"),
             CmsEndpoint = ""
         };
     }

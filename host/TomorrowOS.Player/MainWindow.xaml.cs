@@ -21,6 +21,8 @@ public partial class MainWindow : Window
     private bool _restorePlayerTopmost;
     private bool _hideCursorDuringPlayback = true;
     private readonly bool _disableScreensaver;
+    private readonly bool _disableSleep;
+    private readonly bool _hideTaskbarDuringPlayback;
     private PasscodeDialog? _passcodeDialog;
     private DateTime _lastMaintenanceRequestUtc = DateTime.MinValue;
 
@@ -62,6 +64,8 @@ public partial class MainWindow : Window
         _bridge = new BridgeHost(WebView, this);
         _hideCursorDuringPlayback = ReadHideCursorSetting();
         _disableScreensaver = ReadBoolSetting("disableScreensaver", fallback: true);
+        _disableSleep = ReadBoolSetting("disableSleep", fallback: true);
+        _hideTaskbarDuringPlayback = ReadBoolSetting("hideTaskbarDuringPlayback", fallback: true);
 
         // WPF WebView2 forwards accelerator keys here (not to Window.KeyDown).
         WebView.PreviewKeyDown += WebView_PreviewKeyDown;
@@ -93,8 +97,8 @@ public partial class MainWindow : Window
         _focusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _focusTimer.Tick += (_, _) =>
         {
-            // Activate() resets Windows idle time and blocks the screen saver.
-            if (!_disableScreensaver) return;
+            // Activate() resets Windows idle time and blocks sleep / screen saver.
+            if (!_disableSleep || !_disableScreensaver) return;
             // Never Activate during quiet — that wakes the monitor and caused instability.
             if (_maintenancePromptOpen || _allowClose || _displayQuiet) return;
             if (!IsActive)
@@ -239,13 +243,19 @@ public partial class MainWindow : Window
                 }
             }
 
-            var screens = DisplayService.GetMonitorBounds();
-            if (screens.Count == 0) return;
-            if (index < 0 || index >= screens.Count) index = 0;
+            var monitors = DisplayService.GetMonitors();
+            if (monitors.Count == 0) return;
+            if (index < 0 || index >= monitors.Count) index = 0;
 
-            var bounds = screens[index];
+            // Hide taskbar ON → cover full monitor. OFF → stay in work area so the
+            // Windows taskbar remains visible beside the player.
+            var area = _hideTaskbarDuringPlayback
+                ? monitors[index].Bounds
+                : monitors[index].WorkArea;
+
             WindowStartupLocation = WindowStartupLocation.Manual;
             WindowState = WindowState.Normal;
+            Topmost = _hideTaskbarDuringPlayback;
 
             // Physical pixels via SetWindowPos — WPF Left/Top are DIPs and
             // mis-place under PerMonitorV2 / mixed DPI.
@@ -254,13 +264,16 @@ public partial class MainWindow : Window
             SetWindowPos(
                 helper.Handle,
                 IntPtr.Zero,
-                (int)bounds.Left,
-                (int)bounds.Top,
-                (int)bounds.Width,
-                (int)bounds.Height,
+                (int)area.Left,
+                (int)area.Top,
+                (int)area.Width,
+                (int)area.Height,
                 SwpNozorder | SwpShowwindow);
 
-            WindowState = WindowState.Maximized;
+            if (_hideTaskbarDuringPlayback)
+            {
+                WindowState = WindowState.Maximized;
+            }
         }
         catch
         {

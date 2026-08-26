@@ -26,8 +26,12 @@ internal sealed class InstallRequest
     public bool StartWatchdog { get; set; } = true;
     /// <summary>Installer "Hide mouse cursor after inactivity".</summary>
     public bool HideCursorDuringPlayback { get; set; } = true;
+    /// <summary>Prepare Windows → Hide taskbar during playback.</summary>
+    public bool HideTaskbarDuringPlayback { get; set; } = true;
     /// <summary>Prepare Windows → Disable screen saver.</summary>
     public bool DisableScreensaver { get; set; }
+    /// <summary>Prepare Windows → Disable sleep.</summary>
+    public bool DisableSleep { get; set; }
 }
 
 internal static class InstallService
@@ -119,7 +123,9 @@ internal static class InstallService
             timeZone = req.TimeZone,
             maintenanceWindow = req.MaintenanceWindow,
             hideCursorDuringPlayback = req.HideCursorDuringPlayback,
+            hideTaskbarDuringPlayback = req.HideTaskbarDuringPlayback,
             disableScreensaver = req.DisableScreensaver,
+            disableSleep = req.DisableSleep,
             installedAt = DateTime.UtcNow.ToString("O")
         };
         File.WriteAllText(
@@ -210,6 +216,183 @@ internal static class InstallService
 
         NativeMethods.SystemParametersInfo(SpiSetScreenSaveTimeout, (uint)timeoutSec, IntPtr.Zero, flags);
         NativeMethods.SystemParametersInfo(SpiSetScreenSaveActive, 1, IntPtr.Zero, flags);
+    }
+
+    private static string SleepBackupFile
+    {
+        get
+        {
+            var root = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "TomorrowOS");
+            Directory.CreateDirectory(root);
+            return Path.Combine(root, "sleep-timeout-backup.json");
+        }
+    }
+
+    /// <summary>Sets idle sleep to Never for the active power plan (AC and battery).</summary>
+    public static void ApplyDisableSleep()
+    {
+        SaveSleepBackupIfMissing();
+        SetSleepTimeouts(0, 0, 0, 0);
+    }
+
+    /// <summary>Toggle off: restore sleep timeouts. Does not change display-off.</summary>
+    public static void RestoreSleep()
+    {
+        var standbyAc = 0;
+        var standbyDc = 0;
+        var unattendAc = 0;
+        var unattendDc = 0;
+        var path = SleepBackupFile;
+
+        if (File.Exists(path))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                var root = doc.RootElement;
+                standbyAc = ReadBackupSec(root, "standbyAcSec");
+                standbyDc = ReadBackupSec(root, "standbyDcSec");
+                unattendAc = ReadBackupSec(root, "unattendAcSec");
+                unattendDc = ReadBackupSec(root, "unattendDcSec");
+            }
+            catch
+            {
+                // fall through to live query
+            }
+        }
+
+        if (standbyAc <= 0)
+        {
+            standbyAc = QueryPowerSeconds("SUB_SLEEP", "STANDBYIDLE", ac: true) ?? 0;
+        }
+
+        if (standbyDc <= 0)
+        {
+            standbyDc = QueryPowerSeconds("SUB_SLEEP", "STANDBYIDLE", ac: false) ?? 0;
+        }
+
+        if (unattendAc <= 0)
+        {
+            unattendAc = QueryPowerSeconds("SUB_SLEEP", "UNATTENDSLEEP", ac: true) ?? standbyAc;
+        }
+
+        if (unattendDc <= 0)
+        {
+            unattendDc = QueryPowerSeconds("SUB_SLEEP", "UNATTENDSLEEP", ac: false) ?? standbyDc;
+        }
+
+        if (standbyAc > 0 || standbyDc > 0)
+        {
+            SetSleepTimeouts(standbyAc, standbyDc, unattendAc, unattendDc);
+        }
+    }
+
+    private static int ReadBackupSec(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var el) && el.TryGetInt32(out var v) ? Math.Max(0, v) : 0;
+
+    private static void SaveSleepBackupIfMissing()
+    {
+        var path = SleepBackupFile;
+        if (File.Exists(path))
+        {
+            return;
+        }
+
+        var payload = new
+        {
+            standbyAcSec = QueryPowerSeconds("SUB_SLEEP", "STANDBYIDLE", ac: true) ?? 0,
+            standbyDcSec = QueryPowerSeconds("SUB_SLEEP", "STANDBYIDLE", ac: false) ?? 0,
+            unattendAcSec = QueryPowerSeconds("SUB_SLEEP", "UNATTENDSLEEP", ac: true) ?? 0,
+            unattendDcSec = QueryPowerSeconds("SUB_SLEEP", "UNATTENDSLEEP", ac: false) ?? 0
+        };
+        File.WriteAllText(path, JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static void SetSleepTimeouts(int standbyAc, int standbyDc, int unattendAc, int unattendDc)
+    {
+        RunPowerCfg("/SETACVALUEINDEX", "SCHEME_CURRENT", "SUB_SLEEP", "STANDBYIDLE", standbyAc.ToString());
+        RunPowerCfg("/SETDCVALUEINDEX", "SCHEME_CURRENT", "SUB_SLEEP", "STANDBYIDLE", standbyDc.ToString());
+        RunPowerCfg("/SETACVALUEINDEX", "SCHEME_CURRENT", "SUB_SLEEP", "UNATTENDSLEEP", unattendAc.ToString());
+        RunPowerCfg("/SETDCVALUEINDEX", "SCHEME_CURRENT", "SUB_SLEEP", "UNATTENDSLEEP", unattendDc.ToString());
+        RunPowerCfg("/SETACTIVE", "SCHEME_CURRENT");
+    }
+
+    private static int? QueryPowerSeconds(string subgroup, string setting, bool ac)
+    {
+        var output = CapturePowerCfg("/query", "SCHEME_CURRENT", subgroup, setting);
+        string[] markers = ac
+            ?
+            [
+                "Current AC Power Setting Index:",
+                "当前 AC 电源设置索引:"
+            ]
+            :
+            [
+                "Current DC Power Setting Index:",
+                "当前 DC 电源设置索引:"
+            ];
+
+        var idx = -1;
+        foreach (var marker in markers)
+        {
+            idx = output.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0)
+            {
+                break;
+            }
+        }
+
+        if (idx < 0)
+        {
+            return null;
+        }
+
+        var slice = output[idx..];
+        var hexStart = slice.IndexOf("0x", StringComparison.OrdinalIgnoreCase);
+        if (hexStart < 0)
+        {
+            return null;
+        }
+
+        var hex = new string(slice[(hexStart + 2)..].TakeWhile(Uri.IsHexDigit).ToArray());
+        return int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out var sec)
+            ? sec
+            : null;
+    }
+
+    private static void RunPowerCfg(params string[] args)
+    {
+        CapturePowerCfg(args);
+    }
+
+    private static string CapturePowerCfg(params string[] args)
+    {
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = "powercfg.exe",
+                Arguments = string.Join(" ", args),
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            });
+            if (process == null)
+            {
+                return "";
+            }
+
+            var output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit(15000);
+            return output;
+        }
+        catch
+        {
+            return "";
+        }
     }
 
     private static class NativeMethods
@@ -353,6 +536,17 @@ internal static class InstallService
         {
             log?.Invoke("Leaving Windows screen saver enabled…", "info");
             RestoreScreensaver();
+        }
+
+        if (req.DisableSleep)
+        {
+            log?.Invoke("Disabling Windows sleep…", "info");
+            ApplyDisableSleep();
+        }
+        else
+        {
+            log?.Invoke("Leaving Windows sleep enabled…", "info");
+            RestoreSleep();
         }
 
         if (req.ApplyHardening)

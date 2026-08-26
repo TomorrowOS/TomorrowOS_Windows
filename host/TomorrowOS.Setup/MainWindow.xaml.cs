@@ -229,7 +229,7 @@ public partial class MainWindow : Window
 
         var applyHardening =
             Harden("hibernate") || Harden("saver") || Harden("lock") ||
-            Harden("notif") || Harden("overlay") || Harden("updates") ||
+            Harden("notif") || Harden("updates") ||
             Harden("fallback");
 
         return new InstallRequest
@@ -248,6 +248,7 @@ public partial class MainWindow : Window
             StartWatchdog = Harden("watchdog"),
             HideCursorDuringPlayback = Harden("cursor"),
             HideTaskbarDuringPlayback = Harden("taskbar"),
+            DisableGameOverlays = Harden("overlay"),
             CmsEndpoint = ""
         };
     }

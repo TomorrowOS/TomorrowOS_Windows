@@ -18,11 +18,12 @@ public partial class MainWindow : Window
     private bool _maintenancePromptOpen;
     private bool _allowClose;
     private bool _displayQuiet;
-    private bool _restorePlayerTopmost;
     private bool _hideCursorDuringPlayback = true;
     private readonly bool _disableScreensaver;
     private readonly bool _disableSleep;
     private readonly bool _hideTaskbarDuringPlayback;
+    private readonly bool _disableGameOverlays;
+    private PlayerTopmostGuard? _topmostGuard;
     private PasscodeDialog? _passcodeDialog;
     private DateTime _lastMaintenanceRequestUtc = DateTime.MinValue;
 
@@ -66,6 +67,7 @@ public partial class MainWindow : Window
         _disableScreensaver = ReadBoolSetting("disableScreensaver", fallback: true);
         _disableSleep = ReadBoolSetting("disableSleep", fallback: true);
         _hideTaskbarDuringPlayback = ReadBoolSetting("hideTaskbarDuringPlayback", fallback: true);
+        _disableGameOverlays = ReadBoolSetting("disableGameOverlays", fallback: true);
 
         // WPF WebView2 forwards accelerator keys here (not to Window.KeyDown).
         WebView.PreviewKeyDown += WebView_PreviewKeyDown;
@@ -82,7 +84,12 @@ public partial class MainWindow : Window
                 source.AddHook(WndProc);
             }
         };
-        Closed += (_, _) => MaintenanceHotkeyHook.Stop();
+        Closed += (_, _) =>
+        {
+            MaintenanceHotkeyHook.Stop();
+            _topmostGuard?.Stop();
+            _topmostGuard?.Dispose();
+        };
 
         _cursorIdleTimer = new DispatcherTimer { Interval = CursorIdleHideAfter };
         _cursorIdleTimer.Tick += (_, _) =>
@@ -122,6 +129,9 @@ public partial class MainWindow : Window
             try
             {
                 await _bridge.InitializeAsync(allowScreensaver: !_disableScreensaver);
+                // Start overlay guard only after WebView2 is ready — early focus/process
+                // fighting during init caused crash loops when overlay protection was on.
+                ApplyOverlayTopmostPolicy();
                 if (WebView.CoreWebView2 != null)
                 {
                     WebView.CoreWebView2.NavigationCompleted += (_, args) =>
@@ -146,6 +156,12 @@ public partial class MainWindow : Window
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        const int wmActivate = 0x0006;
+        if (msg == wmActivate && _disableGameOverlays && wParam.ToInt32() == 0)
+        {
+            _topmostGuard?.Raise();
+        }
+
         const int wmSyscommand = 0x0112;
         const int scScreensaver = 0xF140;
         const int scMonitorpower = 0xF170;
@@ -255,7 +271,7 @@ public partial class MainWindow : Window
 
             WindowStartupLocation = WindowStartupLocation.Manual;
             WindowState = WindowState.Normal;
-            Topmost = _hideTaskbarDuringPlayback;
+            Topmost = _disableGameOverlays;
 
             // Physical pixels via SetWindowPos — WPF Left/Top are DIPs and
             // mis-place under PerMonitorV2 / mixed DPI.
@@ -278,6 +294,24 @@ public partial class MainWindow : Window
         catch
         {
             // keep default maximized primary
+        }
+    }
+
+    private void ApplyOverlayTopmostPolicy()
+    {
+        _topmostGuard?.Stop();
+        _topmostGuard?.Dispose();
+        _topmostGuard = null;
+
+        if (_disableGameOverlays)
+        {
+            _topmostGuard = new PlayerTopmostGuard(this);
+            _topmostGuard.Start();
+        }
+        else
+        {
+            Topmost = false;
+            GameOverlayPolicy.RestoreEnable();
         }
     }
 
@@ -330,8 +364,8 @@ public partial class MainWindow : Window
     private void PromptMaintenance()
     {
         _maintenancePromptOpen = true;
-        _restorePlayerTopmost = Topmost;
-        // Drop player below the maintenance gate; hardened Topmost otherwise covers it.
+        _topmostGuard?.Stop();
+        // Drop player below the maintenance gate; Topmost otherwise covers it.
         Topmost = false;
         SetCursorVisible(true);
 
@@ -358,10 +392,7 @@ public partial class MainWindow : Window
 
         if (!_allowClose)
         {
-            if (_restorePlayerTopmost)
-            {
-                Topmost = true;
-            }
+            ApplyOverlayTopmostPolicy();
 
             // Must run AFTER clearing _maintenancePromptOpen (policy ignores updates while open).
             ApplyPlaybackCursorPolicy(forceHide: true);

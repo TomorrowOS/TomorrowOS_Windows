@@ -32,6 +32,8 @@ internal sealed class InstallRequest
     public bool DisableScreensaver { get; set; }
     /// <summary>Prepare Windows → Disable sleep.</summary>
     public bool DisableSleep { get; set; }
+    /// <summary>Prepare Windows → Disable fullscreen game overlays.</summary>
+    public bool DisableGameOverlays { get; set; }
 }
 
 internal static class InstallService
@@ -126,6 +128,7 @@ internal static class InstallService
             hideTaskbarDuringPlayback = req.HideTaskbarDuringPlayback,
             disableScreensaver = req.DisableScreensaver,
             disableSleep = req.DisableSleep,
+            disableGameOverlays = req.DisableGameOverlays,
             installedAt = DateTime.UtcNow.ToString("O")
         };
         File.WriteAllText(
@@ -216,6 +219,280 @@ internal static class InstallService
 
         NativeMethods.SystemParametersInfo(SpiSetScreenSaveTimeout, (uint)timeoutSec, IntPtr.Zero, flags);
         NativeMethods.SystemParametersInfo(SpiSetScreenSaveActive, 1, IntPtr.Zero, flags);
+    }
+
+    /// <summary>Disables Xbox Game Bar capture, background access, and Win+G at install time.</summary>
+    public static void ApplyDisableGameOverlays()
+    {
+        SaveGameOverlayBackupIfMissing();
+        SetGameOverlayCaptureEnabled(false);
+        SetGamingOverlayBackgroundDisabled(true);
+        TrySetMachineGameDvrPolicy(false);
+        NotifyGameOverlaySettingsChanged();
+        TryStopOverlayProcesses();
+    }
+
+    /// <summary>Toggle off: restore prior Game Bar registry values.</summary>
+    public static void RestoreGameOverlays()
+    {
+        if (!TryRestoreGameOverlayFromBackup())
+        {
+            SetGameOverlayCaptureEnabled(true);
+            SetGamingOverlayBackgroundDisabled(false);
+        }
+
+        TrySetMachineGameDvrPolicy(true);
+        NotifyGameOverlaySettingsChanged();
+    }
+
+    private const string BackgroundAppsPath =
+        @"Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications";
+
+    private static readonly string[] KnownGamingOverlayAppIds =
+    {
+        "Microsoft.Xbox.GamingOverlay_8wekyb3d8bbwe!App",
+        "Microsoft.Xbox.GamingOverlay_8wekyb3d8bbwe!GameBar",
+    };
+
+    private static readonly string[] OverlayProcessNames =
+    {
+        "GameBar",
+        "XboxGameBar",
+        "XboxGamingOverlay",
+    };
+
+    private static string GameOverlayBackupFile
+    {
+        get
+        {
+            var root = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "TomorrowOS");
+            Directory.CreateDirectory(root);
+            return Path.Combine(root, "game-overlay-backup.json");
+        }
+    }
+
+    private static readonly (string SubKey, string Name)[] GameOverlayRegistryKeys =
+    {
+        (@"System\GameConfigStore", "GameDVR_Enabled"),
+        (@"Software\Microsoft\Windows\CurrentVersion\GameDVR", "AppCaptureEnabled"),
+        (@"Software\Microsoft\Windows\CurrentVersion\GameDVR", "HistoricalCaptureEnabled"),
+        (@"Software\Microsoft\Windows\CurrentVersion\GameDVR", "GameBarEnabled"),
+        (@"Software\Microsoft\GameBar", "AutoGameModeEnabled"),
+        (@"Software\Microsoft\GameBar", "AllowAutoGameMode"),
+        (@"Software\Microsoft\GameBar", "UseNexusForGameBarEnabled"),
+        (@"Software\Microsoft\GameBar", "ShowStartupPanel"),
+    };
+
+    private static void SetGameOverlayCaptureEnabled(bool enabled)
+    {
+        var dword = enabled ? 1 : 0;
+        foreach (var (subKey, name) in GameOverlayRegistryKeys)
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.CreateSubKey(subKey);
+                key?.SetValue(name, dword, RegistryValueKind.DWord);
+            }
+            catch
+            {
+                // Player runtime hook still protects playback
+            }
+        }
+    }
+
+    private static void SaveGameOverlayBackupIfMissing()
+    {
+        var path = GameOverlayBackupFile;
+        if (File.Exists(path))
+        {
+            return;
+        }
+
+        var snapshot = new Dictionary<string, int?>();
+        foreach (var (subKey, name) in GameOverlayRegistryKeys)
+        {
+            snapshot[$"{subKey}|{name}"] = ReadGameOverlayDword(subKey, name);
+        }
+
+        try
+        {
+            File.WriteAllText(path, JsonSerializer.Serialize(snapshot));
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    private static bool TryRestoreGameOverlayFromBackup()
+    {
+        var path = GameOverlayBackupFile;
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            foreach (var (subKey, name) in GameOverlayRegistryKeys)
+            {
+                var lookup = $"{subKey}|{name}";
+                if (!doc.RootElement.TryGetProperty(lookup, out var value) ||
+                    value.ValueKind == JsonValueKind.Null)
+                {
+                    continue;
+                }
+
+                using var key = Registry.CurrentUser.CreateSubKey(subKey);
+                key?.SetValue(name, value.GetInt32(), RegistryValueKind.DWord);
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static int? ReadGameOverlayDword(string subKey, string name)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(subKey);
+            return key?.GetValue(name) is int i ? i : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void TryStopOverlayProcesses()
+    {
+        foreach (var name in OverlayProcessNames)
+        {
+            try
+            {
+                foreach (var proc in Process.GetProcessesByName(name))
+                {
+                    using (proc)
+                    {
+                        try
+                        {
+                            proc.CloseMainWindow();
+                            if (!proc.WaitForExit(400))
+                            {
+                                proc.Kill();
+                            }
+                        }
+                        catch
+                        {
+                            // ignore
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+    }
+
+    private static void SetGamingOverlayBackgroundDisabled(bool disabled)
+    {
+        var touched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var baseKey = Registry.CurrentUser.OpenSubKey(BackgroundAppsPath, writable: true)
+                ?? Registry.CurrentUser.CreateSubKey(BackgroundAppsPath);
+            if (baseKey != null)
+            {
+                foreach (var subKeyName in baseKey.GetSubKeyNames())
+                {
+                    if (!subKeyName.Contains("Xbox.GamingOverlay", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    touched.Add(subKeyName);
+                    WriteBackgroundDisabled(subKeyName, disabled);
+                }
+            }
+        }
+        catch
+        {
+            // continue
+        }
+
+        foreach (var appId in KnownGamingOverlayAppIds)
+        {
+            if (!touched.Contains(appId))
+            {
+                WriteBackgroundDisabled(appId, disabled);
+            }
+        }
+    }
+
+    private static void WriteBackgroundDisabled(string appId, bool disabled)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey($@"{BackgroundAppsPath}\{appId}");
+            if (key == null)
+            {
+                return;
+            }
+
+            if (disabled)
+            {
+                key.SetValue("DisabledByUser", 1, RegistryValueKind.DWord);
+            }
+            else
+            {
+                key.DeleteValue("DisabledByUser", throwOnMissingValue: false);
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    private static void TrySetMachineGameDvrPolicy(bool enabled)
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.CreateSubKey(@"SOFTWARE\Policies\Microsoft\Windows\GameDVR");
+            key?.SetValue("AllowGameDVR", enabled ? 1 : 0, RegistryValueKind.DWord);
+        }
+        catch
+        {
+            // HKLM may require elevation.
+        }
+    }
+
+    private static void NotifyGameOverlaySettingsChanged()
+    {
+        try
+        {
+            NativeMethods.SendMessageTimeout(
+                new IntPtr(0xffff),
+                0x001A,
+                IntPtr.Zero,
+                "TraySettings",
+                0x0002,
+                1000,
+                out _);
+        }
+        catch
+        {
+            // ignore
+        }
     }
 
     private static string SleepBackupFile
@@ -399,6 +676,16 @@ internal static class InstallService
     {
         [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
         public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        public static extern IntPtr SendMessageTimeout(
+            IntPtr hWnd,
+            int msg,
+            IntPtr wParam,
+            string lParam,
+            uint fuFlags,
+            uint uTimeout,
+            out IntPtr lpdwResult);
     }
 
     public static void RunHardeningScript(string installDir)
@@ -547,6 +834,17 @@ internal static class InstallService
         {
             log?.Invoke("Leaving Windows sleep enabled…", "info");
             RestoreSleep();
+        }
+
+        if (req.DisableGameOverlays)
+        {
+            log?.Invoke("Keeping player above fullscreen overlays…", "info");
+            ApplyDisableGameOverlays();
+        }
+        else
+        {
+            log?.Invoke("Allowing overlays above the player…", "info");
+            RestoreGameOverlays();
         }
 
         if (req.ApplyHardening)

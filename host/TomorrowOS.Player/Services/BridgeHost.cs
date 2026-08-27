@@ -24,6 +24,9 @@ internal sealed class BridgeHost
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(8) };
     private bool _displayMuted;
     private DispatcherTimer? _heartbeatTimer;
+    private bool _allowIdleSleep;
+    private bool _recovering;
+    private DateTime _lastProcessFailUtc = DateTime.MinValue;
 
     public const string AppHost = "tomorrowos.app";
     public const string CacheHost = "tomorrowos.cache";
@@ -35,23 +38,38 @@ internal sealed class BridgeHost
         _downloads = new DownloadService(_storage);
     }
 
-    public async Task InitializeAsync(bool allowScreensaver = false)
+    /// <param name="allowIdleSleep">
+    /// When true (Disable sleep = OFF), use a dedicated WebView2 profile and
+    /// disable Chromium wake-lock features so Windows can idle-sleep even if
+    /// the screen saver toggle is still ON.
+    /// </param>
+    public async Task InitializeAsync(bool allowIdleSleep = false, bool allowScreensaver = false)
     {
+        _allowIdleSleep = allowIdleSleep;
         AppPaths.EnsureDirectories();
         WriteHeartbeat();
 
+        // Suppress Chromium wake locks whenever system sleep OR the screen saver
+        // must be allowed to run. Sleep-off alone is enough — saver-on must not
+        // keep wake locks enabled.
+        var suppressWakeLock = allowIdleSleep || allowScreensaver;
         CoreWebView2EnvironmentOptions? envOptions = null;
-        if (allowScreensaver)
+        if (suppressWakeLock)
         {
-            // Chromium wake lock / idle detection otherwise blocks the screen saver
-            // even when Windows still has a saver configured.
             envOptions = new CoreWebView2EnvironmentOptions(
-                additionalBrowserArguments: "--disable-features=WakeLock,IdleDetection");
+                additionalBrowserArguments: IdleSleepPolicy.BrowserArgumentsForIdleSleep());
         }
+
+        var userData = IdleSleepPolicy.WebView2UserDataFolder(allowIdleSleep);
+        Directory.CreateDirectory(userData);
+
+        IdleSleepPolicy.TryLog(
+            $"WebView2 init allowIdleSleep={allowIdleSleep} allowScreensaver={allowScreensaver} " +
+            $"suppressWakeLock={suppressWakeLock} userData={userData}");
 
         var env = await CoreWebView2Environment.CreateAsync(
             browserExecutableFolder: null,
-            userDataFolder: Path.Combine(AppPaths.ProgramDataRoot, "webview2"),
+            userDataFolder: userData,
             options: envOptions);
         await _webView.EnsureCoreWebView2Async(env);
 
@@ -61,6 +79,17 @@ internal sealed class BridgeHost
         core.Settings.IsStatusBarEnabled = false;
         core.Settings.IsZoomControlEnabled = false;
         core.Settings.AreBrowserAcceleratorKeysEnabled = false;
+
+        if (allowIdleSleep)
+        {
+            IdleSleepPolicy.ClearHostPowerRequests();
+            core.NavigationCompleted += (_, args) =>
+            {
+                if (!args.IsSuccess) return;
+                _ = core.ExecuteScriptAsync(IdleSleepPolicy.ReleaseWakeLockScript);
+            };
+            _ = core.AddScriptToExecuteOnDocumentCreatedAsync(IdleSleepPolicy.ReleaseWakeLockScript);
+        }
 
         core.SetVirtualHostNameToFolderMapping(
             AppHost,
@@ -72,7 +101,10 @@ internal sealed class BridgeHost
             AppPaths.StorageRoot,
             CoreWebView2HostResourceAccessKind.Allow);
 
+        core.WebMessageReceived -= OnWebMessageReceived;
         core.WebMessageReceived += OnWebMessageReceived;
+        core.ProcessFailed -= OnProcessFailed;
+        core.ProcessFailed += OnProcessFailed;
         core.NavigationCompleted += (_, args) =>
         {
             if (!args.IsSuccess)
@@ -83,9 +115,53 @@ internal sealed class BridgeHost
 
         core.Navigate($"https://{AppHost}/index.html");
 
-        _heartbeatTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-        _heartbeatTimer.Tick += (_, _) => WriteHeartbeat();
-        _heartbeatTimer.Start();
+        if (_heartbeatTimer == null)
+        {
+            _heartbeatTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            _heartbeatTimer.Tick += (_, _) =>
+            {
+                WriteHeartbeat();
+                if (_allowIdleSleep)
+                {
+                    IdleSleepPolicy.ClearHostPowerRequests();
+                }
+            };
+            _heartbeatTimer.Start();
+        }
+    }
+
+    private void OnProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
+    {
+        IdleSleepPolicy.TryLog(
+            $"WebView2 ProcessFailed kind={e.ProcessFailedKind} — recovering in-process");
+
+        var now = DateTime.UtcNow;
+        if (_recovering || (now - _lastProcessFailUtc) < TimeSpan.FromSeconds(8))
+        {
+            return;
+        }
+
+        _lastProcessFailUtc = now;
+        _recovering = true;
+        _ = _window.Dispatcher.InvokeAsync(async () =>
+        {
+            try
+            {
+                await Task.Delay(1500);
+                if (_webView.CoreWebView2 != null)
+                {
+                    _webView.CoreWebView2.Navigate($"https://{AppHost}/index.html");
+                }
+            }
+            catch (Exception ex)
+            {
+                IdleSleepPolicy.TryLog("WebView2 recovery navigate failed: " + ex.Message);
+            }
+            finally
+            {
+                _recovering = false;
+            }
+        });
     }
 
     private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)

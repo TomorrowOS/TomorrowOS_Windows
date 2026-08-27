@@ -228,7 +228,7 @@ public partial class MainWindow : Window
             v.ValueKind == JsonValueKind.True;
 
         var applyHardening =
-            Harden("hibernate") || Harden("saver") || Harden("lock") ||
+            Harden("saver") || Harden("lock") ||
             Harden("notif") || Harden("updates") ||
             Harden("fallback");
 
@@ -245,6 +245,7 @@ public partial class MainWindow : Window
             ApplyHardening = applyHardening && GetString(p, "role", "dedicated") != "shared",
             DisableScreensaver = Harden("saver"),
             DisableSleep = Harden("sleep"),
+            DisableHibernate = Harden("hibernate"),
             StartWatchdog = Harden("watchdog"),
             HideCursorDuringPlayback = Harden("cursor"),
             HideTaskbarDuringPlayback = Harden("taskbar"),

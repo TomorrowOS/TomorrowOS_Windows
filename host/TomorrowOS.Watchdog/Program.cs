@@ -13,11 +13,16 @@ internal static class Program
     private static readonly string MutexName = "Global\\TomorrowOS.Watchdog";
 
     private static DateTime _lastPlayerStartUtc = DateTime.MinValue;
+    private static DateTime _lastRestartAttemptUtc = DateTime.MinValue;
+    private static DateTime _lastStaleLogUtc = DateTime.MinValue;
+    private static int _rapidRestartCount;
 
     private static readonly TimeSpan CheckEvery = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan HeartbeatStaleAfter = TimeSpan.FromSeconds(25);
-    // Brief grace only after we start the player — not 45s (that caused ~45s visible delay).
-    private static readonly TimeSpan StartupGraceAfterPlayerStart = TimeSpan.FromSeconds(10);
+    // Heartbeat is informational only — never kill a live player for a stale file.
+    private static readonly TimeSpan HeartbeatStaleLogAfter = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan MinRestartGap = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan RapidRestartWindow = TimeSpan.FromMinutes(2);
+    private const int MaxRapidRestarts = 6;
 
     private static string PlayerExe =>
         Path.Combine(AppContext.BaseDirectory, "TomorrowOS.Player.exe");
@@ -54,9 +59,11 @@ internal static class Program
                 {
                     StartPlayer("process-missing");
                 }
-                else if (IsHeartbeatStale())
+                else
                 {
-                    RestartPlayer("heartbeat-stale");
+                    // Do NOT kill for heartbeat-stale. False positives (UI freeze, disk delay,
+                    // clock skew) were exiting healthy players and causing flash loops.
+                    LogStaleHeartbeatIfNeeded();
                 }
             }
             catch (Exception ex)
@@ -73,26 +80,11 @@ internal static class Program
         return Process.GetProcessesByName("TomorrowOS.Player").Length > 0;
     }
 
-    private static bool InStartupGraceAfterPlayerStart()
+    private static void LogStaleHeartbeatIfNeeded()
     {
-        if (_lastPlayerStartUtc == DateTime.MinValue)
-        {
-            return false;
-        }
-
-        return (DateTime.UtcNow - _lastPlayerStartUtc) < StartupGraceAfterPlayerStart;
-    }
-
-    private static bool IsHeartbeatStale()
-    {
-        if (InStartupGraceAfterPlayerStart())
-        {
-            return false;
-        }
-
         if (!File.Exists(HeartbeatFile))
         {
-            return true;
+            return;
         }
 
         try
@@ -100,14 +92,26 @@ internal static class Program
             var text = File.ReadAllText(HeartbeatFile).Trim();
             if (!DateTime.TryParse(text, null, System.Globalization.DateTimeStyles.RoundtripKind, out var ts))
             {
-                return true;
+                return;
             }
 
-            return (DateTime.UtcNow - ts.ToUniversalTime()) > HeartbeatStaleAfter;
+            var age = DateTime.UtcNow - ts.ToUniversalTime();
+            if (age <= HeartbeatStaleLogAfter)
+            {
+                return;
+            }
+
+            if ((DateTime.UtcNow - _lastStaleLogUtc) < TimeSpan.FromMinutes(5))
+            {
+                return;
+            }
+
+            _lastStaleLogUtc = DateTime.UtcNow;
+            TryLog($"Warning: player heartbeat stale ({(int)age.TotalSeconds}s) but process still alive — not killing.");
         }
         catch
         {
-            return true;
+            // ignore
         }
     }
 
@@ -124,6 +128,53 @@ internal static class Program
         }
     }
 
+    private static bool ShouldBackoffRestart(string reason)
+    {
+        var now = DateTime.UtcNow;
+        if (_lastRestartAttemptUtc != DateTime.MinValue &&
+            (now - _lastRestartAttemptUtc) < MinRestartGap)
+        {
+            TryLog($"Skipping start ({reason}): too soon after previous attempt.");
+            return true;
+        }
+
+        if (_lastRestartAttemptUtc != DateTime.MinValue &&
+            (now - _lastRestartAttemptUtc) > RapidRestartWindow)
+        {
+            _rapidRestartCount = 0;
+        }
+
+        if (_rapidRestartCount >= MaxRapidRestarts)
+        {
+            var wait = TimeSpan.FromSeconds(45);
+            if ((now - _lastRestartAttemptUtc) < wait)
+            {
+                TryLog($"Skipping start ({reason}): backoff after {_rapidRestartCount} rapid starts.");
+                return true;
+            }
+
+            _rapidRestartCount = 0;
+        }
+
+        return false;
+    }
+
+    private static void NoteRestartAttempt()
+    {
+        var now = DateTime.UtcNow;
+        if (_lastRestartAttemptUtc != DateTime.MinValue &&
+            (now - _lastRestartAttemptUtc) <= RapidRestartWindow)
+        {
+            _rapidRestartCount++;
+        }
+        else
+        {
+            _rapidRestartCount = 1;
+        }
+
+        _lastRestartAttemptUtc = now;
+    }
+
     private static void StartPlayer(string reason)
     {
         if (!File.Exists(PlayerExe))
@@ -131,6 +182,19 @@ internal static class Program
             TryLog("Player exe missing: " + PlayerExe);
             return;
         }
+
+        if (IsPlayerAlive())
+        {
+            return;
+        }
+
+        if (ShouldBackoffRestart(reason))
+        {
+            return;
+        }
+
+        NoteRestartAttempt();
+        ClearStaleWebView2Locks();
 
         TryLog($"Starting player ({reason})");
         Process.Start(new ProcessStartInfo
@@ -144,24 +208,33 @@ internal static class Program
         TouchHeartbeat();
     }
 
-    private static void RestartPlayer(string reason)
+    /// <summary>
+    /// After a hard kill, Chromium may leave a lockfile that blocks the next instance
+    /// from initializing — which then looks like another crash to Watchdog.
+    /// </summary>
+    private static void ClearStaleWebView2Locks()
     {
-        TryLog($"Restarting player ({reason})");
-
-        foreach (var process in Process.GetProcessesByName("TomorrowOS.Player"))
+        if (IsPlayerAlive())
         {
-            try
-            {
-                process.Kill(entireProcessTree: true);
-                process.WaitForExit(5000);
-            }
-            catch
-            {
-                // ignore
-            }
+            return;
         }
 
-        StartPlayer(reason);
+        foreach (var profile in new[] { "webview2", "webview2-allow-idle" })
+        {
+            var lockPath = Path.Combine(ProgramDataRoot, profile, "EBWebView", "lockfile");
+            try
+            {
+                if (File.Exists(lockPath))
+                {
+                    File.Delete(lockPath);
+                    TryLog("Cleared stale WebView2 lock: " + lockPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                TryLog("Could not clear WebView2 lock: " + ex.Message);
+            }
+        }
     }
 
     private static void TouchHeartbeat()

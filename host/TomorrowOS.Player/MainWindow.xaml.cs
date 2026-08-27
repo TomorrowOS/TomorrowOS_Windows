@@ -6,7 +6,6 @@ using System.Windows.Interop;
 using System.Windows.Threading;
 using TomorrowOS.Player.Services;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
-using MessageBox = System.Windows.MessageBox;
 
 namespace TomorrowOS.Player;
 
@@ -15,6 +14,8 @@ public partial class MainWindow : Window
     private readonly BridgeHost _bridge;
     private readonly DispatcherTimer _focusTimer;
     private readonly DispatcherTimer _cursorIdleTimer;
+    private readonly DispatcherTimer _heartbeatTimer;
+    private System.Threading.Timer? _backgroundHeartbeat;
     private bool _maintenancePromptOpen;
     private bool _allowClose;
     private bool _displayQuiet;
@@ -49,6 +50,17 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         TouchHeartbeatFile();
+
+        // UI timer + background timer: heartbeat must keep updating even if the
+        // dispatcher is briefly busy (WebView2 / overlay work).
+        _heartbeatTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _heartbeatTimer.Tick += (_, _) => TouchHeartbeatFile();
+        _heartbeatTimer.Start();
+        _backgroundHeartbeat = new System.Threading.Timer(
+            _ => TouchHeartbeatFile(),
+            null,
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromSeconds(5));
 
         try
         {
@@ -86,9 +98,13 @@ public partial class MainWindow : Window
         };
         Closed += (_, _) =>
         {
+            _heartbeatTimer.Stop();
+            try { _backgroundHeartbeat?.Dispose(); } catch { /* ignore */ }
+            _backgroundHeartbeat = null;
             MaintenanceHotkeyHook.Stop();
             _topmostGuard?.Stop();
             _topmostGuard?.Dispose();
+            IdleSleepPolicy.TryLog("MainWindow Closed allowClose=" + _allowClose);
         };
 
         _cursorIdleTimer = new DispatcherTimer { Interval = CursorIdleHideAfter };
@@ -101,11 +117,15 @@ public partial class MainWindow : Window
 
         ApplyPlaybackCursorPolicy(forceHide: true);
 
+        IdleSleepPolicy.TryLog(
+            $"Player settings disableSleep={_disableSleep} disableScreensaver={_disableScreensaver} " +
+            $"disableGameOverlays={_disableGameOverlays}");
+
         _focusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _focusTimer.Tick += (_, _) =>
         {
-            // Activate() resets Windows idle time and blocks sleep / screen saver.
-            if (!_disableSleep || !_disableScreensaver) return;
+            // Only when "Disable sleep" is on. Saver toggle must not gate this.
+            if (!_disableSleep) return;
             // Never Activate during quiet — that wakes the monitor and caused instability.
             if (_maintenancePromptOpen || _allowClose || _displayQuiet) return;
             if (!IsActive)
@@ -126,11 +146,20 @@ public partial class MainWindow : Window
         {
             PlaceOnConfiguredDisplay();
             ApplyPlaybackCursorPolicy(forceHide: true);
+            await StartWebViewWithRetryAsync();
+        };
+    }
+
+    private async Task StartWebViewWithRetryAsync()
+    {
+        const int maxAttempts = 8;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
             try
             {
-                await _bridge.InitializeAsync(allowScreensaver: !_disableScreensaver);
-                // Start overlay guard only after WebView2 is ready — early focus/process
-                // fighting during init caused crash loops when overlay protection was on.
+                await _bridge.InitializeAsync(
+                    allowIdleSleep: !_disableSleep,
+                    allowScreensaver: !_disableScreensaver);
                 ApplyOverlayTopmostPolicy();
                 if (WebView.CoreWebView2 != null)
                 {
@@ -142,35 +171,74 @@ public partial class MainWindow : Window
                         }
                     };
                 }
+
+                IdleSleepPolicy.TryLog($"WebView2 ready (attempt {attempt})");
+                return;
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    "Failed to start WebView2 player host:\n" + ex.Message,
-                    "TomorrowOS",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                IdleSleepPolicy.TryLog($"WebView2 init failed attempt {attempt}/{maxAttempts}: {ex.Message}");
+                if (attempt >= maxAttempts)
+                {
+                    IdleSleepPolicy.TryLog("WebView2 init gave up — process stays alive for Watchdog.");
+                    return;
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(Math.Min(30, attempt * 2)));
             }
-        };
+        }
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        const int wmClose = 0x0010;
         const int wmActivate = 0x0006;
+        const int wmSyscommand = 0x0112;
+        const int scClose = 0xF060;
+        const int scScreensaver = 0xF140;
+        const int scMonitorpower = 0xF170;
+
+        // Block external close attempts (Taskbar, Alt+F4 via SC_CLOSE, etc.)
+        // unless maintenance unlock explicitly allowed exit.
+        if (!_allowClose)
+        {
+            if (msg == wmClose)
+            {
+                handled = true;
+                return IntPtr.Zero;
+            }
+
+            if (msg == wmSyscommand && (wParam.ToInt32() & 0xFFF0) == scClose)
+            {
+                handled = true;
+                return IntPtr.Zero;
+            }
+        }
+
         if (msg == wmActivate && _disableGameOverlays && wParam.ToInt32() == 0)
         {
             _topmostGuard?.Raise();
         }
 
-        const int wmSyscommand = 0x0112;
-        const int scScreensaver = 0xF140;
-        const int scMonitorpower = 0xF170;
         if (msg == wmSyscommand)
         {
             var cmd = wParam.ToInt32() & 0xFFF0;
-            if (cmd is scScreensaver or scMonitorpower)
+
+            // Critical: when sleep is allowed, never swallow SC_SCREENSAVE / SC_MONITORPOWER.
+            // Handling SC_SCREENSAVE while "Disable screen saver" is on was enough to stop
+            // Windows idle sleep on the test machines — even with no video playing.
+            if (!_disableSleep)
+            {
+                return IntPtr.Zero;
+            }
+
+            if (cmd == scScreensaver)
             {
                 handled = _disableScreensaver;
+            }
+            else if (cmd == scMonitorpower)
+            {
+                handled = true;
             }
         }
 
@@ -591,6 +659,11 @@ public partial class MainWindow : Window
         if (!_allowClose)
         {
             e.Cancel = true;
+            IdleSleepPolicy.TryLog("Blocked unexpected close attempt");
+        }
+        else
+        {
+            IdleSleepPolicy.TryLog("Allowing close after maintenance unlock");
         }
     }
 }

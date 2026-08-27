@@ -32,6 +32,8 @@ internal sealed class InstallRequest
     public bool DisableScreensaver { get; set; }
     /// <summary>Prepare Windows → Disable sleep.</summary>
     public bool DisableSleep { get; set; }
+    /// <summary>Prepare Windows → Disable hibernation.</summary>
+    public bool DisableHibernate { get; set; }
     /// <summary>Prepare Windows → Disable fullscreen game overlays.</summary>
     public bool DisableGameOverlays { get; set; }
 }
@@ -128,6 +130,7 @@ internal static class InstallService
             hideTaskbarDuringPlayback = req.HideTaskbarDuringPlayback,
             disableScreensaver = req.DisableScreensaver,
             disableSleep = req.DisableSleep,
+            disableHibernate = req.DisableHibernate,
             disableGameOverlays = req.DisableGameOverlays,
             installedAt = DateTime.UtcNow.ToString("O")
         };
@@ -142,11 +145,26 @@ internal static class InstallService
         key?.SetValue("TomorrowOSWatchdog", "\"" + watchdogPath + "\"");
     }
 
+    public static void RemoveAutoStart()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
+            key?.DeleteValue("TomorrowOSWatchdog", throwOnMissingValue: false);
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
     /// <summary>
     /// Turns the Windows screen saver off for the current user and applies it immediately.
-    /// Registry-only writes often do nothing until logoff; SystemParametersInfo notifies the shell.
+    /// When <paramref name="preserveIdleSleep"/> is true (Disable sleep = OFF), only remove
+    /// the .scr payload so no saver overlay appears — do NOT set ScreenSaveActive=0 via SPI,
+    /// which on some Windows builds stops the idle path from reaching sleep/hibernate.
     /// </summary>
-    public static void ApplyDisableScreensaver()
+    public static void ApplyDisableScreensaver(bool preserveIdleSleep = false)
     {
         try
         {
@@ -154,10 +172,21 @@ internal static class InstallService
                 ?? Registry.CurrentUser.CreateSubKey(@"Control Panel\Desktop");
             if (key != null)
             {
-                key.SetValue("ScreenSaveActive", "0", RegistryValueKind.String);
-                key.SetValue("ScreenSaveTimeOut", "0", RegistryValueKind.String);
-                key.SetValue("ScreenSaverIsSecure", "0", RegistryValueKind.String);
+                // Empty SCRNSAVE.EXE → Windows has nothing to launch as a saver overlay.
                 key.SetValue("SCRNSAVE.EXE", "", RegistryValueKind.String);
+                key.SetValue("ScreenSaverIsSecure", "0", RegistryValueKind.String);
+
+                if (preserveIdleSleep)
+                {
+                    // Keep ScreenSaveActive enabled so the idle continuum can still
+                    // progress to sleep; with no .scr file, no visual saver appears.
+                    key.SetValue("ScreenSaveActive", "1", RegistryValueKind.String);
+                }
+                else
+                {
+                    key.SetValue("ScreenSaveActive", "0", RegistryValueKind.String);
+                    key.SetValue("ScreenSaveTimeOut", "0", RegistryValueKind.String);
+                }
             }
         }
         catch
@@ -171,8 +200,16 @@ internal static class InstallService
         const uint SpifSendWinIniChange = 0x02;
         var flags = SpifUpdateIniFile | SpifSendWinIniChange;
 
-        NativeMethods.SystemParametersInfo(SpiSetScreenSaveTimeout, 0, IntPtr.Zero, flags);
-        NativeMethods.SystemParametersInfo(SpiSetScreenSaveActive, 0, IntPtr.Zero, flags);
+        if (preserveIdleSleep)
+        {
+            // Do not force ScreenSaveActive=0 — that path blocked sleep while saver was "on".
+            NativeMethods.SystemParametersInfo(SpiSetScreenSaveActive, 1, IntPtr.Zero, flags);
+        }
+        else
+        {
+            NativeMethods.SystemParametersInfo(SpiSetScreenSaveTimeout, 0, IntPtr.Zero, flags);
+            NativeMethods.SystemParametersInfo(SpiSetScreenSaveActive, 0, IntPtr.Zero, flags);
+        }
     }
 
     /// <summary>
@@ -566,6 +603,113 @@ internal static class InstallService
         }
     }
 
+    private static string HibernateBackupFile
+    {
+        get
+        {
+            var root = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "TomorrowOS");
+            Directory.CreateDirectory(root);
+            return Path.Combine(root, "hibernate-backup.json");
+        }
+    }
+
+    /// <summary>Turns hibernation off and sets hibernate-after-idle to Never.</summary>
+    public static void ApplyDisableHibernate()
+    {
+        SaveHibernateBackupIfMissing();
+        SetHibernateEnabled(false);
+        SetHibernateTimeouts(0, 0);
+    }
+
+    /// <summary>Toggle off: restore hibernation state from before the first disable.</summary>
+    public static void RestoreHibernate()
+    {
+        var path = HibernateBackupFile;
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        var hibernateEnabled = false;
+        var hibernateAc = 0;
+        var hibernateDc = 0;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            var root = doc.RootElement;
+            if (root.TryGetProperty("hibernateEnabled", out var enabledEl) &&
+                (enabledEl.ValueKind == JsonValueKind.True || enabledEl.ValueKind == JsonValueKind.False))
+            {
+                hibernateEnabled = enabledEl.GetBoolean();
+            }
+
+            hibernateAc = ReadBackupSec(root, "hibernateAcSec");
+            hibernateDc = ReadBackupSec(root, "hibernateDcSec");
+        }
+        catch
+        {
+            return;
+        }
+
+        SetHibernateEnabled(hibernateEnabled);
+        if (hibernateEnabled)
+        {
+            SetHibernateTimeouts(hibernateAc, hibernateDc);
+        }
+    }
+
+    private static void SaveHibernateBackupIfMissing()
+    {
+        var path = HibernateBackupFile;
+        if (File.Exists(path))
+        {
+            return;
+        }
+
+        var payload = new
+        {
+            hibernateEnabled = QueryHibernateEnabled(),
+            hibernateAcSec = QueryPowerSeconds("SUB_SLEEP", "HIBERNATEIDLE", ac: true) ?? 0,
+            hibernateDcSec = QueryPowerSeconds("SUB_SLEEP", "HIBERNATEIDLE", ac: false) ?? 0
+        };
+        File.WriteAllText(path, JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static bool QueryHibernateEnabled()
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Power");
+            if (key?.GetValue("HibernateEnabled") is int enabled)
+            {
+                return enabled != 0;
+            }
+        }
+        catch
+        {
+            // fall through to powercfg
+        }
+
+        var output = CapturePowerCfg("/a");
+        return output.Contains("Hibernate", StringComparison.OrdinalIgnoreCase) &&
+               !output.Contains("has not been enabled", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void SetHibernateEnabled(bool enabled)
+    {
+        CapturePowerCfg("/hibernate", enabled ? "on" : "off");
+    }
+
+    private static void SetHibernateTimeouts(int hibernateAc, int hibernateDc)
+    {
+        RunPowerCfg("/SETACVALUEINDEX", "SCHEME_CURRENT", "SUB_SLEEP", "HIBERNATEIDLE", hibernateAc.ToString());
+        RunPowerCfg("/SETDCVALUEINDEX", "SCHEME_CURRENT", "SUB_SLEEP", "HIBERNATEIDLE", hibernateDc.ToString());
+        RunPowerCfg("/SETACTIVE", "SCHEME_CURRENT");
+    }
+
     private static int ReadBackupSec(JsonElement root, string name) =>
         root.TryGetProperty(name, out var el) && el.TryGetInt32(out var v) ? Math.Max(0, v) : 0;
 
@@ -816,8 +960,13 @@ internal static class InstallService
 
         if (req.DisableScreensaver)
         {
-            log?.Invoke("Disabling Windows screen saver…", "info");
-            ApplyDisableScreensaver();
+            log?.Invoke(
+                req.DisableSleep
+                    ? "Disabling Windows screen saver…"
+                    : "Disabling screen saver overlay (keeping idle sleep)…",
+                "info");
+            // Sleep OFF + Saver ON: soft disable so idle sleep/hibernate still work.
+            ApplyDisableScreensaver(preserveIdleSleep: !req.DisableSleep);
         }
         else
         {
@@ -834,6 +983,17 @@ internal static class InstallService
         {
             log?.Invoke("Leaving Windows sleep enabled…", "info");
             RestoreSleep();
+        }
+
+        if (req.DisableHibernate)
+        {
+            log?.Invoke("Disabling Windows hibernation…", "info");
+            ApplyDisableHibernate();
+        }
+        else
+        {
+            log?.Invoke("Leaving Windows hibernation enabled…", "info");
+            RestoreHibernate();
         }
 
         if (req.DisableGameOverlays)
@@ -857,6 +1017,11 @@ internal static class InstallService
         {
             log?.Invoke("Registering startup…", "info");
             RegisterAutoStart(Path.Combine(req.InstallDir, "TomorrowOS.Watchdog.exe"));
+        }
+        else
+        {
+            log?.Invoke("Removing startup registration…", "info");
+            RemoveAutoStart();
         }
 
         log?.Invoke("Verifying installation…", "info");

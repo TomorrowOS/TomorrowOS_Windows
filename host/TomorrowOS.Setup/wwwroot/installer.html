@@ -587,7 +587,7 @@ const HARDENING = [
   { id: 'autostart', t: 'Start TomorrowOS automatically after login', d: 'Registers startup so playback resumes without anyone signing in at the device.', critical: true },
   { id: 'sleep', t: 'Disable sleep', d: 'Stops Windows suspending the device during quiet hours.', critical: true },
   { id: 'hibernate', t: 'Disable hibernation', d: 'Prevents hibernation and frees disk for the content cache.', critical: false },
-  { id: 'saver', t: 'Disable screen saver', d: 'Removes the screen saver so content is never covered.', critical: true },
+  { id: 'saver', t: 'Disable screen saver', d: 'Blocks the Windows screen saver overlay only. Does not prevent sleep or hibernation — use those toggles separately.', critical: true },
   { id: 'lock', t: 'Prevent automatic lock', d: 'Stops Windows showing the lock screen over content after inactivity.', critical: true },
   { id: 'notif', t: 'Hide Windows notifications during playback', d: 'System and application toasts never appear over content.', critical: true },
   { id: 'taskbar', t: 'Hide taskbar during playback', d: 'Keeps the taskbar and Start menu off screen while the player has focus.', critical: true },

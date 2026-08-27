@@ -34,10 +34,15 @@ internal sealed class PlayerTopmostGuard : IDisposable
         _window = window;
         _inputBlocker = new GameBarInputBlocker();
         _inputBlocker.ShortcutBlocked += OnShortcutBlocked;
-        _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(750) };
+        _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
         _timer.Tick += (_, _) => EnforceOverlayBlock();
         _registryTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
-        _registryTimer.Tick += (_, _) => GameOverlayPolicy.ApplyRegistryDisable();
+        _registryTimer.Tick += (_, _) =>
+        {
+            GameOverlayPolicy.ApplyRegistryDisable();
+            // Kill overlay apps infrequently — every 750ms kill was unnecessarily aggressive.
+            GameOverlayPolicy.StopOverlayProcesses();
+        };
     }
 
     public void Start()
@@ -90,7 +95,7 @@ internal sealed class PlayerTopmostGuard : IDisposable
 
         try
         {
-            GameOverlayPolicy.StopOverlayProcesses();
+            // Fast path: hide overlay windows + keep topmost. Do not Kill processes here.
             GameOverlayPolicy.HideVisibleOverlayWindows();
             RefreshTopmost();
             DemoteForegroundOverlayIfAny();

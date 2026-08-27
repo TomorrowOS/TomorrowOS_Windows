@@ -5,9 +5,8 @@ $ErrorActionPreference = "Continue"
 
 Write-Host "Applying TomorrowOS signage hardening..."
 
-# Hibernate only. Do not change display-off or sleep timeouts here.
-powercfg /change hibernate-timeout-ac 0 | Out-Null
-powercfg /change hibernate-timeout-dc 0 | Out-Null
+# Hibernate is applied by Setup when "Disable hibernation" is on — do not
+# write it here, or that toggle being off would still disable hibernation.
 
 # Screensaver is applied by Setup when "Disable screen saver" is on — do not
 # write it here, or that toggle being off would still kill the screen saver.

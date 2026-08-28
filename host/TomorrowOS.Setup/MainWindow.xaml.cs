@@ -229,8 +229,7 @@ public partial class MainWindow : Window
 
         var applyHardening =
             Harden("saver") || Harden("lock") ||
-            Harden("notif") || Harden("updates") ||
-            Harden("fallback");
+            Harden("notif") || Harden("fallback");
 
         return new InstallRequest
         {
@@ -250,6 +249,7 @@ public partial class MainWindow : Window
             HideCursorDuringPlayback = Harden("cursor"),
             HideTaskbarDuringPlayback = Harden("taskbar"),
             DisableGameOverlays = Harden("overlay"),
+            ConfigureWindowsUpdate = Harden("updates"),
             CmsEndpoint = ""
         };
     }

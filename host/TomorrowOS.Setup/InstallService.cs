@@ -3,6 +3,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
 namespace TomorrowOS.Setup;
@@ -36,6 +37,8 @@ internal sealed class InstallRequest
     public bool DisableHibernate { get; set; }
     /// <summary>Prepare Windows → Disable fullscreen game overlays.</summary>
     public bool DisableGameOverlays { get; set; }
+    /// <summary>Prepare Windows → Configure Windows Update maintenance window.</summary>
+    public bool ConfigureWindowsUpdate { get; set; }
 }
 
 internal static class InstallService
@@ -132,6 +135,7 @@ internal static class InstallService
             disableSleep = req.DisableSleep,
             disableHibernate = req.DisableHibernate,
             disableGameOverlays = req.DisableGameOverlays,
+            configureWindowsUpdate = req.ConfigureWindowsUpdate,
             installedAt = DateTime.UtcNow.ToString("O")
         };
         File.WriteAllText(
@@ -713,6 +717,234 @@ internal static class InstallService
     private static int ReadBackupSec(JsonElement root, string name) =>
         root.TryGetProperty(name, out var el) && el.TryGetInt32(out var v) ? Math.Max(0, v) : 0;
 
+    private const string WindowsUpdateUxKey = @"SOFTWARE\Microsoft\WindowsUpdate\UX\Settings";
+    private const string WindowsUpdateAuPolicyKey = @"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU";
+
+    private static string WindowsUpdateBackupFile
+    {
+        get
+        {
+            var root = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "TomorrowOS");
+            Directory.CreateDirectory(root);
+            return Path.Combine(root, "windows-update-backup.json");
+        }
+    }
+
+    /// <summary>
+    /// Schedules Windows Update installs/restarts inside the maintenance window and keeps
+    /// updates enabled. Active Hours are set to the inverse window so playback hours
+    /// are not interrupted by automatic restarts.
+    /// </summary>
+    public static void ApplyWindowsUpdateMaintenanceWindow(string maintenanceWindow)
+    {
+        if (!TryParseMaintenanceWindow(maintenanceWindow, out var maintStartMin, out var maintEndMin))
+        {
+            maintStartMin = 120;
+            maintEndMin = 240;
+        }
+
+        SaveWindowsUpdateBackupIfMissing();
+
+        using (var ux = Registry.LocalMachine.CreateSubKey(WindowsUpdateUxKey))
+        {
+            // Active hours = outside maintenance (no auto-restart during playback).
+            ux?.SetValue("ActiveHoursStart", maintEndMin, RegistryValueKind.DWord);
+            ux?.SetValue("ActiveHoursEnd", maintStartMin, RegistryValueKind.DWord);
+            ux?.SetValue("SmartActiveHours", 0, RegistryValueKind.DWord);
+            ux?.SetValue("IsActiveHoursEnabled", 1, RegistryValueKind.DWord);
+        }
+
+        using (var au = Registry.LocalMachine.CreateSubKey(WindowsUpdateAuPolicyKey))
+        {
+            // Keep updates on; schedule install at maintenance start; avoid reboot while signed in.
+            au?.SetValue("AUOptions", 4, RegistryValueKind.DWord);
+            au?.SetValue("ScheduledInstallDay", 0, RegistryValueKind.DWord);
+            au?.SetValue("ScheduledInstallTime", maintStartMin / 60, RegistryValueKind.DWord);
+            au?.SetValue("NoAutoRebootWithLoggedOnUsers", 1, RegistryValueKind.DWord);
+        }
+    }
+
+    /// <summary>Toggle off: restore Windows Update UX/policy keys from before first apply.</summary>
+    public static void RestoreWindowsUpdate()
+    {
+        var path = WindowsUpdateBackupFile;
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            RestoreRegistryDwords(
+                Registry.LocalMachine,
+                WindowsUpdateUxKey,
+                doc.RootElement.TryGetProperty("uxSettings", out var ux) ? ux : default);
+            RestoreRegistryDwords(
+                Registry.LocalMachine,
+                WindowsUpdateAuPolicyKey,
+                doc.RootElement.TryGetProperty("auPolicies", out var au) ? au : default);
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    internal static bool TryParseMaintenanceWindow(string input, out int startMinutes, out int endMinutes)
+    {
+        startMinutes = 0;
+        endMinutes = 0;
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return false;
+        }
+
+        var normalized = input
+            .Replace('\u2013', '-')
+            .Replace('\u2014', '-')
+            .Replace("–", "-", StringComparison.Ordinal)
+            .Replace("—", "-", StringComparison.Ordinal);
+        var parts = normalized.Split('-', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+        {
+            return false;
+        }
+
+        if (!TryParseTimeOfDay(parts[0], out startMinutes) ||
+            !TryParseTimeOfDay(parts[1], out endMinutes))
+        {
+            return false;
+        }
+
+        return startMinutes != endMinutes;
+    }
+
+    private static bool TryParseTimeOfDay(string text, out int minutes)
+    {
+        minutes = 0;
+        text = text.Trim();
+        if (TimeSpan.TryParse(text, out var ts))
+        {
+            minutes = (int)ts.TotalMinutes;
+            return minutes is >= 0 and < 1440;
+        }
+
+        var match = Regex.Match(text, @"^(\d{1,2}):(\d{2})$");
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        var hours = int.Parse(match.Groups[1].Value);
+        var mins = int.Parse(match.Groups[2].Value);
+        if (hours is < 0 or > 23 || mins is < 0 or > 59)
+        {
+            return false;
+        }
+
+        minutes = hours * 60 + mins;
+        return true;
+    }
+
+    private static void SaveWindowsUpdateBackupIfMissing()
+    {
+        var path = WindowsUpdateBackupFile;
+        if (File.Exists(path))
+        {
+            return;
+        }
+
+        var payload = new
+        {
+            uxSettings = SnapshotRegistryDwords(Registry.LocalMachine, WindowsUpdateUxKey, new[]
+            {
+                "ActiveHoursStart",
+                "ActiveHoursEnd",
+                "SmartActiveHours",
+                "IsActiveHoursEnabled"
+            }),
+            auPolicies = SnapshotRegistryDwords(Registry.LocalMachine, WindowsUpdateAuPolicyKey, new[]
+            {
+                "AUOptions",
+                "ScheduledInstallDay",
+                "ScheduledInstallTime",
+                "NoAutoRebootWithLoggedOnUsers"
+            })
+        };
+
+        File.WriteAllText(path, JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static Dictionary<string, int?> SnapshotRegistryDwords(
+        RegistryKey root,
+        string subKeyPath,
+        IEnumerable<string> valueNames)
+    {
+        var snapshot = new Dictionary<string, int?>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var key = root.OpenSubKey(subKeyPath);
+            foreach (var name in valueNames)
+            {
+                snapshot[name] = key?.GetValue(name) is int i ? i : null;
+            }
+        }
+        catch
+        {
+            foreach (var name in valueNames)
+            {
+                snapshot[name] = null;
+            }
+        }
+
+        return snapshot;
+    }
+
+    private static void RestoreRegistryDwords(RegistryKey root, string subKeyPath, JsonElement snapshot)
+    {
+        if (snapshot.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        var hadAny = snapshot.EnumerateObject().Any(p => p.Value.ValueKind != JsonValueKind.Null);
+        if (!hadAny)
+        {
+            try
+            {
+                root.DeleteSubKeyTree(subKeyPath, throwOnMissingSubKey: false);
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return;
+        }
+
+        using var key = root.OpenSubKey(subKeyPath, writable: true)
+            ?? root.CreateSubKey(subKeyPath);
+        if (key == null)
+        {
+            return;
+        }
+
+        foreach (var prop in snapshot.EnumerateObject())
+        {
+            if (prop.Value.ValueKind == JsonValueKind.Null)
+            {
+                key.DeleteValue(prop.Name, throwOnMissingValue: false);
+            }
+            else if (prop.Value.TryGetInt32(out var value))
+            {
+                key.SetValue(prop.Name, value, RegistryValueKind.DWord);
+            }
+        }
+    }
+
     private static void SaveSleepBackupIfMissing()
     {
         var path = SleepBackupFile;
@@ -1007,6 +1239,17 @@ internal static class InstallService
             RestoreGameOverlays();
         }
 
+        if (req.ConfigureWindowsUpdate)
+        {
+            log?.Invoke("Configuring Windows Update maintenance window…", "info");
+            ApplyWindowsUpdateMaintenanceWindow(req.MaintenanceWindow);
+        }
+        else
+        {
+            log?.Invoke("Leaving Windows Update settings unchanged…", "info");
+            RestoreWindowsUpdate();
+        }
+
         if (req.ApplyHardening)
         {
             log?.Invoke("Applying Windows signage settings…", "info");
@@ -1036,6 +1279,10 @@ internal static class InstallService
         ClearRuntimeFlags();
         WriteConfig(req.InstallDir, req.CmsEndpoint, req.Orientation, req.DisplayIndex, req.ContentFit);
         WriteSettings(req);
+        if (req.ConfigureWindowsUpdate)
+        {
+            ApplyWindowsUpdateMaintenanceWindow(req.MaintenanceWindow);
+        }
         LaunchPlayer(req.InstallDir, forceRestart: true);
         if (req.StartWatchdog)
         {

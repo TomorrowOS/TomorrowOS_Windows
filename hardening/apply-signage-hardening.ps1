@@ -18,6 +18,9 @@ reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" 
 # Game Bar / capture overlays are applied by Setup when "Disable fullscreen game
 # overlays" is on — do not write them here.
 
+# Windows Update maintenance window / Active Hours are applied by Setup when
+# "Configure Windows update maintenance window" is on — do not write them here.
+
 # Focus assist: priority only (best-effort)
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings" /v NOC_GLOBAL_SETTING_TOASTS_ENABLED /t REG_DWORD /d 0 /f | Out-Null
 

@@ -38,6 +38,9 @@ internal static class SilentInstaller
             HideTaskbarDuringPlayback = !args.Any(a => a.Equals("/showtaskbar", StringComparison.OrdinalIgnoreCase)),
             DisableGameOverlays = args.Any(a => a.Equals("/harden", StringComparison.OrdinalIgnoreCase))
                 && !args.Any(a => a.Equals("/allowgameoverlays", StringComparison.OrdinalIgnoreCase)),
+            ConfigureWindowsUpdate = !args.Any(a => a.Equals("/noupdatewindow", StringComparison.OrdinalIgnoreCase))
+                && (args.Any(a => a.Equals("/harden", StringComparison.OrdinalIgnoreCase))
+                    || !string.IsNullOrWhiteSpace(GetArg("/window", ""))),
             DeviceName = GetArg("/name", ""),
             SiteName = GetArg("/site", ""),
             MaintenanceWindow = GetArg("/window", "02:00–04:00")

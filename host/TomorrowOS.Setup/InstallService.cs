@@ -31,6 +31,8 @@ internal sealed class InstallRequest
     public bool HideTaskbarDuringPlayback { get; set; } = true;
     /// <summary>Prepare Windows → Disable screen saver.</summary>
     public bool DisableScreensaver { get; set; }
+    /// <summary>Prepare Windows → Prevent screen turn-off (Windows "Turn off my screen after").</summary>
+    public bool PreventDisplayOff { get; set; }
     /// <summary>Prepare Windows → Disable sleep.</summary>
     public bool DisableSleep { get; set; }
     /// <summary>Prepare Windows → Disable hibernation.</summary>
@@ -132,6 +134,7 @@ internal static class InstallService
             hideCursorDuringPlayback = req.HideCursorDuringPlayback,
             hideTaskbarDuringPlayback = req.HideTaskbarDuringPlayback,
             disableScreensaver = req.DisableScreensaver,
+            preventDisplayOff = req.PreventDisplayOff,
             disableSleep = req.DisableSleep,
             disableHibernate = req.DisableHibernate,
             disableGameOverlays = req.DisableGameOverlays,
@@ -607,6 +610,107 @@ internal static class InstallService
         }
     }
 
+    private static string DisplayOffBackupFile
+    {
+        get
+        {
+            var root = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "TomorrowOS");
+            Directory.CreateDirectory(root);
+            return Path.Combine(root, "display-off-backup.json");
+        }
+    }
+
+    /// <summary>
+    /// Sets Windows "Turn off my screen after" to Never for the active power plan (AC and battery).
+    /// </summary>
+    public static void ApplyPreventDisplayOff()
+    {
+        SaveDisplayOffBackupIfMissing();
+        SetDisplayTimeouts(0, 0);
+    }
+
+    /// <summary>Toggle off: restore display-off timeouts from before the first apply.</summary>
+    public static void RestoreDisplayOff()
+    {
+        var path = DisplayOffBackupFile;
+        if (!File.Exists(path))
+        {
+            // We never changed display-off — leave Windows settings alone.
+            return;
+        }
+
+        int videoAc;
+        int videoDc;
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            var root = doc.RootElement;
+            videoAc = ReadBackupSec(root, "videoAcSec");
+            videoDc = ReadBackupSec(root, "videoDcSec");
+        }
+        catch
+        {
+            return;
+        }
+
+        // No prior non-Never timeout recorded — leave whatever Windows is set to now.
+        if (videoAc <= 0 && videoDc <= 0)
+        {
+            return;
+        }
+
+        if (videoAc <= 0) videoAc = videoDc;
+        if (videoDc <= 0) videoDc = videoAc;
+        SetDisplayTimeouts(videoAc, videoDc);
+    }
+
+    private static void SaveDisplayOffBackupIfMissing()
+    {
+        var path = DisplayOffBackupFile;
+        if (File.Exists(path))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                var ac = ReadBackupSec(doc.RootElement, "videoAcSec");
+                var dc = ReadBackupSec(doc.RootElement, "videoDcSec");
+                // Keep the first real (non-Never) snapshot only.
+                if (ac > 0 || dc > 0)
+                {
+                    return;
+                }
+            }
+            catch
+            {
+                // rewrite below
+            }
+        }
+
+        var queriedAc = QueryPowerSeconds("SUB_VIDEO", "VIDEOIDLE", ac: true);
+        var queriedDc = QueryPowerSeconds("SUB_VIDEO", "VIDEOIDLE", ac: false);
+        if (queriedAc is null && queriedDc is null)
+        {
+            // Could not read current timeouts — do not invent a backup value.
+            return;
+        }
+
+        var payload = new
+        {
+            videoAcSec = queriedAc ?? queriedDc ?? 0,
+            videoDcSec = queriedDc ?? queriedAc ?? 0
+        };
+        File.WriteAllText(path, JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static void SetDisplayTimeouts(int videoAc, int videoDc)
+    {
+        RunPowerCfg("/SETACVALUEINDEX", "SCHEME_CURRENT", "SUB_VIDEO", "VIDEOIDLE", videoAc.ToString());
+        RunPowerCfg("/SETDCVALUEINDEX", "SCHEME_CURRENT", "SUB_VIDEO", "VIDEOIDLE", videoDc.ToString());
+        RunPowerCfg("/SETACTIVE", "SCHEME_CURRENT");
+    }
+
     private static string HibernateBackupFile
     {
         get
@@ -975,16 +1079,24 @@ internal static class InstallService
     private static int? QueryPowerSeconds(string subgroup, string setting, bool ac)
     {
         var output = CapturePowerCfg("/query", "SCHEME_CURRENT", subgroup, setting);
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            return null;
+        }
+
+        // English + Chinese (both "AC"/"DC" and 交流/直流 wordings used across builds).
         string[] markers = ac
             ?
             [
                 "Current AC Power Setting Index:",
-                "当前 AC 电源设置索引:"
+                "当前 AC 电源设置索引:",
+                "当前交流电源设置索引:"
             ]
             :
             [
                 "Current DC Power Setting Index:",
-                "当前 DC 电源设置索引:"
+                "当前 DC 电源设置索引:",
+                "当前直流电源设置索引:"
             ];
 
         var idx = -1;
@@ -997,8 +1109,27 @@ internal static class InstallService
             }
         }
 
+        // Fallback: last hex on the AC/DC line when wording differs slightly.
         if (idx < 0)
         {
+            var lineKey = ac
+                ? new[] { "AC Power Setting", "交流电源" }
+                : new[] { "DC Power Setting", "直流电源" };
+            foreach (var line in output.Split('\n'))
+            {
+                if (!lineKey.Any(k => line.Contains(k, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                var match = Regex.Match(line, @"0x([0-9a-fA-F]+)");
+                if (match.Success &&
+                    int.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.HexNumber, null, out var fromLine))
+                {
+                    return fromLine;
+                }
+            }
+
             return null;
         }
 
@@ -1031,7 +1162,10 @@ internal static class InstallService
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
-                RedirectStandardError = true
+                RedirectStandardError = true,
+                // Localized powercfg text (e.g. 当前交流电源设置索引) needs the ANSI code page.
+                StandardOutputEncoding = Encoding.Default,
+                StandardErrorEncoding = Encoding.Default
             });
             if (process == null)
             {
@@ -1204,6 +1338,17 @@ internal static class InstallService
         {
             log?.Invoke("Leaving Windows screen saver enabled…", "info");
             RestoreScreensaver();
+        }
+
+        if (req.PreventDisplayOff)
+        {
+            log?.Invoke("Preventing automatic screen turn-off…", "info");
+            ApplyPreventDisplayOff();
+        }
+        else
+        {
+            log?.Invoke("Leaving Windows screen turn-off settings unchanged…", "info");
+            RestoreDisplayOff();
         }
 
         if (req.DisableSleep)

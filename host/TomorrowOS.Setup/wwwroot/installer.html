@@ -585,17 +585,16 @@ const ROLES = [
 ];
 const HARDENING = [
   { id: 'autostart', t: 'Start TomorrowOS automatically after login', d: 'Registers startup so playback resumes without anyone signing in at the device.', critical: true },
+  { id: 'display', t: 'Prevent screen turn-off', d: 'Sets Windows “Turn off my screen after” to Never so the display stays on during playback.', critical: true },
   { id: 'sleep', t: 'Disable sleep', d: 'Stops Windows suspending the device during quiet hours.', critical: true },
   { id: 'hibernate', t: 'Disable hibernation', d: 'Prevents hibernation and frees disk for the content cache.', critical: false },
   { id: 'saver', t: 'Disable screen saver', d: 'Blocks the Windows screen saver overlay only. Does not prevent sleep or hibernation — use those toggles separately.', critical: true },
-  { id: 'lock', t: 'Prevent automatic lock', d: 'Stops Windows showing the lock screen over content after inactivity.', critical: true },
   { id: 'notif', t: 'Hide Windows notifications during playback', d: 'System and application toasts never appear over content.', critical: true },
   { id: 'taskbar', t: 'Hide taskbar during playback', d: 'Keeps the taskbar and Start menu off screen while the player has focus.', critical: true },
   { id: 'cursor', t: 'Hide mouse cursor after inactivity', d: 'Hides the pointer during playback.', critical: false },
   { id: 'overlay', t: 'Disable fullscreen game overlays', d: 'Turns off Game Bar to prevent it from interrupting the fullscreen player.', critical: false },
   { id: 'updates', t: 'Configure Windows update maintenance window', d: 'Updates remain enabled but install outside playback hours.', critical: true },
-  { id: 'watchdog', t: 'Start watchdog recovery service', d: 'Monitors the player heartbeat and restarts it if it crashes or freezes.', critical: true },
-  { id: 'fallback', t: 'Create fallback screen for recovery', d: 'Shows a branded local screen while playback is restoring.', critical: true }
+  { id: 'watchdog', t: 'Start watchdog recovery service', d: 'Monitors the player heartbeat and restarts it if it crashes or freezes.', critical: true }
 ];
 const ORIENTS = [
   { id: 'landscape', t: 'Landscape', d: ' No rotation applied.' },
@@ -625,7 +624,6 @@ const INSTALL_TASKS = [
   { t: 'Creating local cache' },
   { t: 'Applying Windows signage settings' },
   { t: 'Registering startup service' },
-  { t: 'Preparing fallback content' },
   { t: 'Verifying installation' }
 ];
 

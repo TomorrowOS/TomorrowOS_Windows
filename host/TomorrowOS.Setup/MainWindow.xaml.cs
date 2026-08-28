@@ -228,8 +228,7 @@ public partial class MainWindow : Window
             v.ValueKind == JsonValueKind.True;
 
         var applyHardening =
-            Harden("saver") || Harden("lock") ||
-            Harden("notif") || Harden("fallback");
+            Harden("saver") || Harden("notif");
 
         return new InstallRequest
         {
@@ -243,6 +242,7 @@ public partial class MainWindow : Window
             AutoStart = Harden("autostart"),
             ApplyHardening = applyHardening && GetString(p, "role", "dedicated") != "shared",
             DisableScreensaver = Harden("saver"),
+            PreventDisplayOff = Harden("display"),
             DisableSleep = Harden("sleep"),
             DisableHibernate = Harden("hibernate"),
             StartWatchdog = Harden("watchdog"),

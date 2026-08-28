@@ -31,6 +31,8 @@ internal static class SilentInstaller
             AutoStart = !args.Any(a => a.Equals("/noautostart", StringComparison.OrdinalIgnoreCase)),
             ApplyHardening = args.Any(a => a.Equals("/harden", StringComparison.OrdinalIgnoreCase)),
             DisableScreensaver = args.Any(a => a.Equals("/harden", StringComparison.OrdinalIgnoreCase)),
+            PreventDisplayOff = args.Any(a => a.Equals("/harden", StringComparison.OrdinalIgnoreCase))
+                && !args.Any(a => a.Equals("/keepdisplayoff", StringComparison.OrdinalIgnoreCase)),
             DisableSleep = args.Any(a => a.Equals("/harden", StringComparison.OrdinalIgnoreCase)),
             DisableHibernate = args.Any(a => a.Equals("/harden", StringComparison.OrdinalIgnoreCase)),
             StartWatchdog = !args.Any(a => a.Equals("/nowatchdog", StringComparison.OrdinalIgnoreCase)),

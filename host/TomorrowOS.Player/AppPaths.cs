@@ -25,6 +25,66 @@ internal static class AppPaths
 
     public static string SettingsFile => Path.Combine(ProgramDataRoot, "settings.json");
 
+    /// <summary>
+    /// Writes player.stop so the current user can delete it later (Watchdog / CMS reboot / Player start).
+    /// ProgramData often inherits Users=RX on files created by elevated writers.
+    /// </summary>
+    public static void WriteStopFlag()
+    {
+        EnsureDirectories();
+        var path = StopFlagFile;
+        File.WriteAllText(path, DateTime.UtcNow.ToString("O"));
+        TryGrantUsersModify(path);
+    }
+
+    public static bool TryClearStopAndMaintenanceFlags()
+    {
+        var ok = true;
+        ok &= TryDeleteFlag(StopFlagFile);
+        ok &= TryDeleteFlag(MaintenanceFlagFile);
+        return ok;
+    }
+
+    private static bool TryDeleteFlag(string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return true;
+            }
+
+            TryGrantUsersModify(path);
+            File.Delete(path);
+            return !File.Exists(path);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void TryGrantUsersModify(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            var security = info.GetAccessControl();
+            var users = new System.Security.Principal.SecurityIdentifier(
+                System.Security.Principal.WellKnownSidType.BuiltinUsersSid,
+                null);
+            security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+                users,
+                System.Security.AccessControl.FileSystemRights.Modify,
+                System.Security.AccessControl.AccessControlType.Allow));
+            info.SetAccessControl(security);
+        }
+        catch
+        {
+            // ignore — best effort
+        }
+    }
+
     public static string WwwRoot
     {
         get

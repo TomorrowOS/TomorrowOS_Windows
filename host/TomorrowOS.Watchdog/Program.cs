@@ -44,8 +44,17 @@ internal static class Program
         {
             try
             {
-                if (File.Exists(MaintenanceFlag) || File.Exists(StopFlag))
+                if (File.Exists(MaintenanceFlag) || ShouldHonorStopFlag())
                 {
+                    if ((DateTime.UtcNow - _lastStaleLogUtc) > TimeSpan.FromMinutes(2))
+                    {
+                        _lastStaleLogUtc = DateTime.UtcNow;
+                        TryLog(
+                            File.Exists(StopFlag)
+                                ? "Skipping player start: player.stop present (maintenance exit)."
+                                : "Skipping player start: maintenance.flag present.");
+                    }
+
                     Thread.Sleep(CheckEvery);
                     continue;
                 }
@@ -117,7 +126,7 @@ internal static class Program
 
     private static void EnsurePlayerRunning(string reason)
     {
-        if (File.Exists(StopFlag) || File.Exists(MaintenanceFlag))
+        if (File.Exists(MaintenanceFlag) || ShouldHonorStopFlag())
         {
             return;
         }
@@ -125,6 +134,41 @@ internal static class Program
         if (!IsPlayerAlive())
         {
             StartPlayer(reason);
+        }
+    }
+
+    /// <summary>
+    /// Honor player.stop only when the current user can modify it (real maintenance exit).
+    /// An elevated/undeletable leftover must not permanently block Player after reboot.
+    /// </summary>
+    private static bool ShouldHonorStopFlag()
+    {
+        if (!File.Exists(StopFlag))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var stream = new FileStream(
+                StopFlag,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.Read);
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            TryLog("Ignoring undeletable player.stop (ACL); starting player.");
+            return false;
+        }
+        catch (IOException)
+        {
+            return true;
+        }
+        catch
+        {
+            return true;
         }
     }
 

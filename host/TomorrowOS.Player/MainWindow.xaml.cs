@@ -66,7 +66,7 @@ public partial class MainWindow : Window
         {
             if (File.Exists(AppPaths.StopFlagFile))
             {
-                File.Delete(AppPaths.StopFlagFile);
+                AppPaths.TryClearStopAndMaintenanceFlags();
             }
         }
         catch
@@ -504,7 +504,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            File.WriteAllText(AppPaths.StopFlagFile, DateTime.UtcNow.ToString("O"));
+            AppPaths.WriteStopFlag();
             if (File.Exists(AppPaths.MaintenanceFlagFile))
             {
                 File.Delete(AppPaths.MaintenanceFlagFile);

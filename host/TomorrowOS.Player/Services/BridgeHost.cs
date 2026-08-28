@@ -250,6 +250,10 @@ internal sealed class BridgeHost
             }
 
             case "device.reboot":
+                // CMS reboot must bring the player back. Clear stop/maintenance flags first;
+                // a leftover player.stop would make Watchdog start but refuse to launch Player.
+                AppPaths.TryClearStopAndMaintenanceFlags();
+
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = "shutdown",

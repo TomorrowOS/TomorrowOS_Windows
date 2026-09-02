@@ -88,6 +88,7 @@ public partial class MainWindow : Window
             ("Stopping watchdog restart…", UninstallService.WriteStopFlag),
             ("Stopping TomorrowOS…", UninstallService.StopTomorrowOsProcesses),
             ("Removing startup registration…", UninstallService.RemoveAutoStart),
+            ("Removing desktop shortcut…", UninstallService.RemoveDesktopShortcut),
             ("Removing local data…", () =>
             {
                 UninstallService.DeleteDirectoryBestEffort(UninstallService.ProgramDataRoot);

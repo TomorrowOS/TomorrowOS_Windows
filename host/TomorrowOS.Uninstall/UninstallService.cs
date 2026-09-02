@@ -49,6 +49,46 @@ internal static class UninstallService
         }
     }
 
+    /// <summary>
+    /// Deletes the desktop shortcut created by Setup ("TomorrowOS Player.lnk").
+    /// </summary>
+    public static void RemoveDesktopShortcut()
+    {
+        var names = new[] { "TomorrowOS Player.lnk", "TomorrowOS.lnk" };
+        var folders = new[]
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+            Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory)
+        };
+
+        foreach (var folder in folders.Where(f => !string.IsNullOrWhiteSpace(f)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            foreach (var name in names)
+            {
+                TryDeleteFile(Path.Combine(folder, name));
+            }
+        }
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return;
+            }
+
+            File.SetAttributes(path, FileAttributes.Normal);
+            File.Delete(path);
+        }
+        catch
+        {
+            // ignore — shortcut may already be gone or locked
+        }
+    }
+
     public static void WriteStopFlag()
     {
         try

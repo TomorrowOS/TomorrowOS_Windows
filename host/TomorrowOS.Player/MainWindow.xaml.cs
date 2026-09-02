@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly bool _disableSleep;
     private readonly bool _hideTaskbarDuringPlayback;
     private readonly bool _disableGameOverlays;
+    private readonly bool _sharedWindowMode;
     private PlayerTopmostGuard? _topmostGuard;
     private PasscodeDialog? _passcodeDialog;
     private DateTime _lastMaintenanceRequestUtc = DateTime.MinValue;
@@ -75,6 +76,12 @@ public partial class MainWindow : Window
         }
 
         _bridge = new BridgeHost(WebView, this);
+        _sharedWindowMode = IsSharedRole();
+        if (_sharedWindowMode)
+        {
+            ApplySharedWindowChrome();
+        }
+
         _hideCursorDuringPlayback = ReadHideCursorSetting();
         _disableScreensaver = ReadBoolSetting("disableScreensaver", fallback: true);
         _disableSleep = ReadBoolSetting("disableSleep", fallback: true);
@@ -118,7 +125,8 @@ public partial class MainWindow : Window
         ApplyPlaybackCursorPolicy(forceHide: true);
 
         IdleSleepPolicy.TryLog(
-            $"Player settings disableSleep={_disableSleep} disableScreensaver={_disableScreensaver} " +
+            $"Player settings role={(_sharedWindowMode ? "shared" : "dedicated")} " +
+            $"disableSleep={_disableSleep} disableScreensaver={_disableScreensaver} " +
             $"disableGameOverlays={_disableGameOverlays}");
 
         _focusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
@@ -200,7 +208,8 @@ public partial class MainWindow : Window
 
         // Block external close attempts (Taskbar, Alt+F4 via SC_CLOSE, etc.)
         // unless maintenance unlock explicitly allowed exit.
-        if (!_allowClose)
+        // Shared/test installs use a normal window — allow the user to close it.
+        if (!_allowClose && !_sharedWindowMode)
         {
             if (msg == wmClose)
             {
@@ -310,26 +319,54 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ApplySharedWindowChrome()
+    {
+        WindowStyle = WindowStyle.SingleBorderWindow;
+        ResizeMode = ResizeMode.CanResize;
+        ShowInTaskbar = true;
+        Topmost = false;
+        MinWidth = 640;
+        MinHeight = 480;
+    }
+
+    private void PlaceSharedWindowOnDisplay(MonitorLayout monitor)
+    {
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        WindowState = WindowState.Normal;
+        Topmost = false;
+
+        var dpiX = 1.0;
+        var dpiY = 1.0;
+        if (PresentationSource.FromVisual(this)?.CompositionTarget is { TransformToDevice: var transform })
+        {
+            dpiX = transform.M11;
+            dpiY = transform.M22;
+        }
+
+        // Seed restore bounds on the chosen monitor, then maximize so the titled
+        // window fills that monitor's work area (taskbar stays visible).
+        Left = monitor.WorkArea.Left / dpiX;
+        Top = monitor.WorkArea.Top / dpiY;
+        Width = Math.Max(MinWidth, monitor.WorkArea.Width / dpiX);
+        Height = Math.Max(MinHeight, monitor.WorkArea.Height / dpiY);
+        WindowState = WindowState.Maximized;
+    }
+
     private void PlaceOnConfiguredDisplay()
     {
         try
         {
             // Indices match Setup: both sort monitors by (Left, Top).
-            var index = 0;
-            var settingsPath = AppPaths.SettingsFile;
-            if (File.Exists(settingsPath))
-            {
-                var json = File.ReadAllText(settingsPath);
-                var match = System.Text.RegularExpressions.Regex.Match(json, "\"displayIndex\"\\s*:\\s*(\\d+)");
-                if (match.Success)
-                {
-                    index = int.Parse(match.Groups[1].Value);
-                }
-            }
-
+            var index = ReadDisplayIndex();
             var monitors = DisplayService.GetMonitors();
             if (monitors.Count == 0) return;
             if (index < 0 || index >= monitors.Count) index = 0;
+
+            if (_sharedWindowMode)
+            {
+                PlaceSharedWindowOnDisplay(monitors[index]);
+                return;
+            }
 
             // Hide taskbar ON → cover full monitor. OFF → stay in work area so the
             // Windows taskbar remains visible beside the player.
@@ -523,13 +560,12 @@ public partial class MainWindow : Window
     {
         try
         {
-            var settingsPath = AppPaths.SettingsFile;
-            if (!File.Exists(settingsPath))
+            var json = ReadSettingsJson();
+            if (json == null)
             {
                 return fallback;
             }
 
-            var json = File.ReadAllText(settingsPath);
             var match = System.Text.RegularExpressions.Regex.Match(
                 json,
                 "\"" + propertyName + "\"\\s*:\\s*(true|false)",
@@ -546,6 +582,56 @@ public partial class MainWindow : Window
             return fallback;
         }
     }
+
+    private static string ReadStringSetting(string propertyName, string fallback)
+    {
+        try
+        {
+            var json = ReadSettingsJson();
+            if (json == null)
+            {
+                return fallback;
+            }
+
+            var match = System.Text.RegularExpressions.Regex.Match(
+                json,
+                "\"" + propertyName + "\"\\s*:\\s*\"([^\"]+)\"",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            return match.Success ? match.Groups[1].Value : fallback;
+        }
+        catch
+        {
+            return fallback;
+        }
+    }
+
+    private static int ReadDisplayIndex()
+    {
+        try
+        {
+            var json = ReadSettingsJson();
+            if (json == null)
+            {
+                return 0;
+            }
+
+            var match = System.Text.RegularExpressions.Regex.Match(json, "\"displayIndex\"\\s*:\\s*(\\d+)");
+            return match.Success ? int.Parse(match.Groups[1].Value) : 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private static string? ReadSettingsJson()
+    {
+        var settingsPath = AppPaths.SettingsFile;
+        return File.Exists(settingsPath) ? File.ReadAllText(settingsPath) : null;
+    }
+
+    private static bool IsSharedRole() =>
+        string.Equals(ReadStringSetting("role", "dedicated"), "shared", StringComparison.OrdinalIgnoreCase);
 
     private static bool ReadHideCursorSetting() =>
         ReadBoolSetting("hideCursorDuringPlayback", fallback: true);
@@ -656,14 +742,16 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        if (!_allowClose)
+        if (!_allowClose && !_sharedWindowMode)
         {
             e.Cancel = true;
             IdleSleepPolicy.TryLog("Blocked unexpected close attempt");
         }
         else
         {
-            IdleSleepPolicy.TryLog("Allowing close after maintenance unlock");
+            IdleSleepPolicy.TryLog(_sharedWindowMode
+                ? "Allowing close in shared window mode"
+                : "Allowing close after maintenance unlock");
         }
     }
 }

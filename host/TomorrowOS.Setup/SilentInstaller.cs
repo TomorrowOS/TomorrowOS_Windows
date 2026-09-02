@@ -45,7 +45,8 @@ internal static class SilentInstaller
                     || !string.IsNullOrWhiteSpace(GetArg("/window", ""))),
             DeviceName = GetArg("/name", ""),
             SiteName = GetArg("/site", ""),
-            MaintenanceWindow = GetArg("/window", "02:00–04:00")
+            MaintenanceWindow = GetArg("/window", "02:00–04:00"),
+            CreateDesktopShortcut = !args.Any(a => a.Equals("/noshortcut", StringComparison.OrdinalIgnoreCase))
         };
 
         if (string.IsNullOrWhiteSpace(req.Passcode))
@@ -55,6 +56,10 @@ internal static class SilentInstaller
 
         InstallService.InstallCore(req);
         InstallService.ClearRuntimeFlags();
+        if (req.CreateDesktopShortcut)
+        {
+            InstallService.TryCreateDesktopShortcut(req.InstallDir);
+        }
         InstallService.LaunchPlayer(req.InstallDir, forceRestart: true);
         if (req.StartWatchdog)
         {

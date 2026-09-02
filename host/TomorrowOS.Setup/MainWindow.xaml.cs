@@ -257,10 +257,9 @@ public partial class MainWindow : Window
     private static void ApplyFinalizeParams(JsonElement p, InstallRequest req)
     {
         req.CmsEndpoint = GetString(p, "cmsEndpoint", req.CmsEndpoint);
-        req.DeviceName = GetString(p, "deviceName", req.DeviceName);
-        req.SiteName = GetString(p, "siteName", req.SiteName);
         req.TimeZone = GetString(p, "timeZone", req.TimeZone);
         req.MaintenanceWindow = GetString(p, "maintenanceWindow", req.MaintenanceWindow);
+        req.CreateDesktopShortcut = GetBool(p, "createDesktopShortcut", fallback: true);
     }
 
     private static Screen[] GetSortedScreens() =>
@@ -379,5 +378,21 @@ public partial class MainWindow : Window
         }
 
         return fallback;
+    }
+
+    private static bool GetBool(JsonElement p, string name, bool fallback)
+    {
+        if (p.ValueKind != JsonValueKind.Object || !p.TryGetProperty(name, out var el))
+        {
+            return fallback;
+        }
+
+        return el.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String when bool.TryParse(el.GetString(), out var fromString) => fromString,
+            _ => fallback
+        };
     }
 }

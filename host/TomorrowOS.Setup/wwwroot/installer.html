@@ -494,18 +494,9 @@ code { font-family: var(--mono); font-size: 12px; }
       <div class="inst__main">
         <div class="instpane" id="pane-setup">
           <h2>Device setup</h2>
-          <p class="lede">Installation is complete. Name this device and set its maintenance window. Everything here is stored locally and can be changed remotely later.</p>
+          <p class="lede">Installation is complete. Set the maintenance window and optional desktop shortcut. Everything here is stored locally and can be changed later.</p>
           <div class="grid2" style="max-width:none">
             <div>
-              <div class="field">
-                <label for="dev-name">Device display name</label>
-                <input class="input" id="dev-name" value="Front Counter 01">
-                <div class="help">Shown in the CMS and on the pairing screen.</div>
-              </div>
-              <div class="field">
-                <label for="dev-site">Site or location name</label>
-                <input class="input" id="dev-site" value="">
-              </div>
               <div class="field">
                 <label for="dev-tz">Time zone</label>
                 <select class="input" id="dev-tz">
@@ -524,6 +515,13 @@ code { font-family: var(--mono); font-size: 12px; }
                   <option value="00:30–02:30">00:30 – 02:30 daily</option>
                 </select>
               </div>
+              <label class="choice" style="margin-top:4px">
+                <input type="checkbox" id="chk-shortcut" checked>
+                <span>
+                  <span class="choice__t">Create desktop shortcut</span>
+                  <span class="choice__d">Adds a TomorrowOS Player shortcut to this user’s desktop. Uncheck to skip.</span>
+                </span>
+              </label>
             </div>
             <div>
               <div class="card" style="margin:0">
@@ -893,7 +891,7 @@ function validate() {
     cancel.hidden = false;
     btn.hidden = false;
     if (setupStep === 0) {
-      ok = $('#dev-name').value.trim().length > 0;
+      ok = true;
       note = 'Local configuration · nothing is sent until you continue';
     } else {
       ok = cmsOk;
@@ -992,10 +990,9 @@ async function finish() {
   $('#btn-next').textContent = 'Launching…';
   await bridge.call('host.finalize', {
     cmsEndpoint: $('#cms-url').value.trim(),
-    deviceName: $('#dev-name').value.trim(),
-    siteName: $('#dev-site').value.trim(),
     timeZone: $('#dev-tz').value,
-    maintenanceWindow: $('#dev-window').value
+    maintenanceWindow: $('#dev-window').value,
+    createDesktopShortcut: $('#chk-shortcut').checked
   });
   await bridge.call('host.close');
 }
@@ -1025,7 +1022,6 @@ $('#pc-show').onclick = () => {
   $('#pc-show').textContent = show ? 'Hide' : 'Show';
   $('#pc-show').setAttribute('aria-pressed', String(show));
 };
-$('#dev-name').oninput = validate;
 $('#btn-test').onclick = async () => {
   const badge = $('#conn-badge');
   const msg = $('#conn-msg');

@@ -41,6 +41,8 @@ internal sealed class InstallRequest
     public bool DisableGameOverlays { get; set; }
     /// <summary>Prepare Windows → Configure Windows Update maintenance window.</summary>
     public bool ConfigureWindowsUpdate { get; set; }
+    /// <summary>Device setup → Create desktop shortcut (default on).</summary>
+    public bool CreateDesktopShortcut { get; set; } = true;
 }
 
 internal static class InstallService
@@ -1428,10 +1430,77 @@ internal static class InstallService
         {
             ApplyWindowsUpdateMaintenanceWindow(req.MaintenanceWindow);
         }
+        if (req.CreateDesktopShortcut)
+        {
+            TryCreateDesktopShortcut(req.InstallDir);
+        }
         LaunchPlayer(req.InstallDir, forceRestart: true);
         if (req.StartWatchdog)
         {
             LaunchWatchdog(req.InstallDir);
+        }
+    }
+
+    /// <summary>
+    /// Creates a current-user desktop .lnk to TomorrowOS.Player.exe.
+    /// </summary>
+    public static void TryCreateDesktopShortcut(string installDir)
+    {
+        try
+        {
+            var player = Path.Combine(installDir, "TomorrowOS.Player.exe");
+            if (!File.Exists(player))
+            {
+                return;
+            }
+
+            var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            if (string.IsNullOrWhiteSpace(desktop))
+            {
+                desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            }
+
+            if (string.IsNullOrWhiteSpace(desktop))
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(desktop);
+            var linkPath = Path.Combine(desktop, "TomorrowOS Player.lnk");
+
+            var shellType = Type.GetTypeFromProgID("WScript.Shell");
+            if (shellType == null)
+            {
+                return;
+            }
+
+            var shell = Activator.CreateInstance(shellType);
+            if (shell == null)
+            {
+                return;
+            }
+
+            var shortcut = shellType.InvokeMember(
+                "CreateShortcut",
+                System.Reflection.BindingFlags.InvokeMethod,
+                null,
+                shell,
+                new object[] { linkPath });
+            if (shortcut == null)
+            {
+                return;
+            }
+
+            var shortcutType = shortcut.GetType();
+            shortcutType.InvokeMember("TargetPath", System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { player });
+            shortcutType.InvokeMember("WorkingDirectory", System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { installDir });
+            shortcutType.InvokeMember("Description", System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { "TomorrowOS Player" });
+            shortcutType.InvokeMember("IconLocation", System.Reflection.BindingFlags.SetProperty, null, shortcut, new object[] { player + ",0" });
+            shortcutType.InvokeMember("Save", System.Reflection.BindingFlags.InvokeMethod, null, shortcut, null);
+        }
+        catch
+        {
+            // Shortcut is optional — do not fail install/finalize.
         }
     }
 

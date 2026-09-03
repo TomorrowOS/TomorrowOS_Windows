@@ -494,18 +494,13 @@ code { font-family: var(--mono); font-size: 12px; }
       <div class="inst__main">
         <div class="instpane" id="pane-setup">
           <h2>Device setup</h2>
-          <p class="lede">Installation is complete. Set the maintenance window and optional desktop shortcut. Everything here is stored locally and can be changed later.</p>
+          <p class="lede">Installation is complete. Set the maintenance window and desktop shortcut.</p>
           <div class="grid2" style="max-width:none">
             <div>
               <div class="field">
                 <label for="dev-tz">Time zone</label>
-                <select class="input" id="dev-tz">
-                  <option>(UTC+08:00) Perth</option>
-                  <option>(UTC+10:00) Sydney</option>
-                  <option>(UTC+07:00) Bangkok, Hanoi, Jakarta</option>
-                  <option>(UTC+00:00) London</option>
-                  <option>(UTC−05:00) New York</option>
-                </select>
+                <select class="input" id="dev-tz"></select>
+                <div class="help" id="tz-help">Dedicated installs apply this as the Windows system time zone.</div>
               </div>
               <div class="field">
                 <label for="dev-window">Preferred maintenance window</label>
@@ -863,6 +858,12 @@ function renderSetupSteps() {
     <div><dt>Display</dt><dd>${S.displayId + 1}</dd></div>
     <div><dt>Orientation</dt><dd>${esc(S.orientation)}</dd></div>
     <div><dt>Content fit</dt><dd>${esc(S.fit)}</dd></div>`;
+  const tzHelp = $('#tz-help');
+  if (tzHelp) {
+    tzHelp.textContent = S.role === 'shared'
+      ? 'Shared installs keep the current Windows time zone. This value is stored locally only.'
+      : 'Dedicated installs apply this as the Windows system time zone (schedules and update windows use it).';
+  }
   validate();
 }
 
@@ -1087,6 +1088,7 @@ $('#btn-next').onclick = async () => {
     $('#kv-cache').textContent = boot.cacheDir || $('#kv-cache').textContent;
     $('#kv-ver').textContent = boot.version || '1.0.0';
     $('#side-ver').textContent = `Windows Player ${boot.version || '1.0.0'} · x64`;
+    fillTimeZones(boot.timeZones || [], boot.currentTimeZoneId || '');
   } catch (err) {
     console.error(err);
   }
@@ -1096,6 +1098,20 @@ $('#btn-next').onclick = async () => {
   renderPasscodeRules();
   renderInstallSteps();
 })();
+
+function fillTimeZones(zones, currentId) {
+  const sel = $('#dev-tz');
+  if (!zones.length) {
+    sel.innerHTML = `<option value="">(system default)</option>`;
+    return;
+  }
+  sel.innerHTML = zones.map(z =>
+    `<option value="${esc(z.id)}" ${z.id === currentId ? 'selected' : ''}>${esc(z.name)}</option>`
+  ).join('');
+  if (currentId && !zones.some(z => z.id === currentId)) {
+    sel.value = zones[0].id;
+  }
+}
 </script>
 </body>
 </html>

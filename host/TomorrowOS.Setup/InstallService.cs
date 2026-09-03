@@ -1426,6 +1426,10 @@ internal static class InstallService
         ClearRuntimeFlags();
         WriteConfig(req.InstallDir, req.CmsEndpoint, req.Orientation, req.DisplayIndex, req.ContentFit);
         WriteSettings(req);
+        if (IsDedicatedRole(req.Role))
+        {
+            TryApplySystemTimeZone(req.TimeZone);
+        }
         if (req.ConfigureWindowsUpdate)
         {
             ApplyWindowsUpdateMaintenanceWindow(req.MaintenanceWindow);
@@ -1438,6 +1442,63 @@ internal static class InstallService
         if (req.StartWatchdog)
         {
             LaunchWatchdog(req.InstallDir);
+        }
+    }
+
+    private static bool IsDedicatedRole(string? role) =>
+        !string.Equals(role, "shared", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Sets the Windows system time zone (dedicated signage installs only).
+    /// Uses tzutil so Active Hours / schedules follow the chosen local clock.
+    /// </summary>
+    public static bool TryApplySystemTimeZone(string? timeZoneId)
+    {
+        if (string.IsNullOrWhiteSpace(timeZoneId))
+        {
+            return false;
+        }
+
+        try
+        {
+            TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return false;
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return false;
+        }
+
+        try
+        {
+            if (string.Equals(TimeZoneInfo.Local.Id, timeZoneId, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = "tzutil.exe",
+                Arguments = "/s \"" + timeZoneId.Replace("\"", "") + "\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            });
+            if (process == null)
+            {
+                return false;
+            }
+
+            process.WaitForExit(15000);
+            return process.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
         }
     }
 

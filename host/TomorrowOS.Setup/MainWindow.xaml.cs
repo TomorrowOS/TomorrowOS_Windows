@@ -121,7 +121,9 @@ public partial class MainWindow : Window
                         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
                         "TomorrowOS",
                         "cache"),
-                    displays = EnumerateDisplays()
+                    displays = EnumerateDisplays(),
+                    timeZones = EnumerateTimeZones(),
+                    currentTimeZoneId = TimeZoneInfo.Local.Id
                 };
 
             case "host.pickFolder":
@@ -267,6 +269,19 @@ public partial class MainWindow : Window
             .OrderBy(s => s.Bounds.Left)
             .ThenBy(s => s.Bounds.Top)
             .ToArray();
+
+    private static object[] EnumerateTimeZones()
+    {
+        return TimeZoneInfo.GetSystemTimeZones()
+            .OrderBy(tz => tz.BaseUtcOffset)
+            .ThenBy(tz => tz.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .Select(tz => (object)new
+            {
+                id = tz.Id,
+                name = tz.DisplayName
+            })
+            .ToArray();
+    }
 
     private static object[] EnumerateDisplays()
     {

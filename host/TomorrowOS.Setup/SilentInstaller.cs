@@ -46,6 +46,7 @@ internal static class SilentInstaller
             DeviceName = GetArg("/name", ""),
             SiteName = GetArg("/site", ""),
             MaintenanceWindow = GetArg("/window", "02:00–04:00"),
+            TimeZone = GetArg("/timezone", ""),
             CreateDesktopShortcut = !args.Any(a => a.Equals("/noshortcut", StringComparison.OrdinalIgnoreCase))
         };
 
@@ -56,6 +57,11 @@ internal static class SilentInstaller
 
         InstallService.InstallCore(req);
         InstallService.ClearRuntimeFlags();
+        if (!string.IsNullOrWhiteSpace(req.TimeZone) &&
+            !string.Equals(req.Role, "shared", StringComparison.OrdinalIgnoreCase))
+        {
+            InstallService.TryApplySystemTimeZone(req.TimeZone);
+        }
         if (req.CreateDesktopShortcut)
         {
             InstallService.TryCreateDesktopShortcut(req.InstallDir);

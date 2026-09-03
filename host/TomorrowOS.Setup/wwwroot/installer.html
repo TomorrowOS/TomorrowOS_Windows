@@ -812,7 +812,7 @@ function renderDisplay() {
         <input type="radio" name="display" value="${d.id}" ${d.id === S.displayId ? 'checked' : ''}>
         <span>
           <span class="displaycard__t">${esc(d.name)}${d.primary ? ' — Primary' : ''}</span>
-          <span class="displaycard__d">${esc(d.res)} · ${esc(d.hz || '—')}<br>${esc(d.model || '')}</span>
+          <span class="displaycard__d">${esc(d.res)}</span>
         </span>
       </label>
     </div>`).join('');

@@ -30,6 +30,53 @@ public partial class MainWindow : Window
 
     private const int WmNclButtonDown = 0xA1;
     private const int HtCaption = 0x2;
+    private const int EnumCurrentSettings = -1;
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern bool EnumDisplaySettings(
+        string lpszDeviceName,
+        int iModeNum,
+        ref DevMode lpDevMode);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct DevMode
+    {
+        private const int CchDeviceName = 32;
+        private const int CchFormName = 32;
+
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = CchDeviceName)]
+        public string dmDeviceName;
+        public short dmSpecVersion;
+        public short dmDriverVersion;
+        public short dmSize;
+        public short dmDriverExtra;
+        public int dmFields;
+        public int dmPositionX;
+        public int dmPositionY;
+        public int dmDisplayOrientation;
+        public int dmDisplayFixedOutput;
+        public short dmColor;
+        public short dmDuplex;
+        public short dmYResolution;
+        public short dmTTOption;
+        public short dmCollate;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = CchFormName)]
+        public string dmFormName;
+        public short dmLogPixels;
+        public int dmBitsPerPel;
+        public int dmPelsWidth;
+        public int dmPelsHeight;
+        public int dmDisplayFlags;
+        public int dmDisplayFrequency;
+        public int dmICMMethod;
+        public int dmICMIntent;
+        public int dmMediaType;
+        public int dmDitherType;
+        public int dmReserved1;
+        public int dmReserved2;
+        public int dmPanningWidth;
+        public int dmPanningHeight;
+    }
 
     public MainWindow()
     {
@@ -291,16 +338,35 @@ public partial class MainWindow : Window
         for (var i = 0; i < screens.Length; i++)
         {
             var s = screens[i];
-            var portrait = s.Bounds.Height > s.Bounds.Width;
+            // Screen.Bounds is DPI-virtualized under PerMonitorV2 and often wrong on
+            // secondary monitors. EnumDisplaySettings returns the real mode Windows shows.
+            var width = s.Bounds.Width;
+            var height = s.Bounds.Height;
+            var hz = "";
+            var mode = new DevMode { dmSize = (short)Marshal.SizeOf<DevMode>() };
+            if (!string.IsNullOrWhiteSpace(s.DeviceName) &&
+                EnumDisplaySettings(s.DeviceName, EnumCurrentSettings, ref mode) &&
+                mode.dmPelsWidth > 0 &&
+                mode.dmPelsHeight > 0)
+            {
+                width = mode.dmPelsWidth;
+                height = mode.dmPelsHeight;
+                if (mode.dmDisplayFrequency > 1)
+                {
+                    hz = mode.dmDisplayFrequency + " Hz";
+                }
+            }
+
+            var portrait = height > width;
             list[i] = new
             {
                 id = i,
                 name = "Display " + (i + 1),
-                res = $"{s.Bounds.Width} × {s.Bounds.Height}",
-                hz = "—",
+                res = $"{width} × {height}",
+                hz,
                 primary = s.Primary,
                 portrait,
-                model = s.DeviceName
+                model = ""
             };
         }
 
